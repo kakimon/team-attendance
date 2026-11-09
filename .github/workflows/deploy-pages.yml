@@ -1,0 +1,68 @@
+# Build the static SPA and deploy it to GitHub Pages.
+# Required repository variables (Settings > Secrets and variables > Actions > Variables):
+#   SUPABASE_URL              e.g. https://<ref>.supabase.co
+#   SUPABASE_PUBLISHABLE_KEY  sb_publishable_... (public by design; never the secret/service_role key)
+name: Deploy GitHub Pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - name: Check required variables
+        run: |
+          test -n "$SUPABASE_URL" || { echo "::error::vars.SUPABASE_URL is not set"; exit 1; }
+          test -n "$SUPABASE_PUBLISHABLE_KEY" || { echo "::error::vars.SUPABASE_PUBLISHABLE_KEY is not set"; exit 1; }
+          case "$SUPABASE_PUBLISHABLE_KEY" in sb_secret_*|*service_role*) echo "::error::Use the publishable key, not a secret key"; exit 1;; esac
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+      - name: Generate static application
+        run: npm run generate
+        env:
+          NUXT_PUBLIC_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          NUXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          NUXT_APP_BASE_URL: ${{ steps.pages.outputs.base_path }}/
+      - name: Check bundle (no demo code, SPA fallback present)
+        run: |
+          ! grep -rl "createMockRepo\|u-tanaka" .output/public
+          test -f .output/public/404.html
+          test -f .output/public/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .output/public
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

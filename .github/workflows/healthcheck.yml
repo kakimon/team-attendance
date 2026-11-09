@@ -1,0 +1,31 @@
+# Daily lightweight Supabase health check (read-only RPC, publishable key).
+# Fails the run when the database does not answer correctly, so GitHub notifies you.
+# Note: this does NOT guarantee that a Free-plan project is never paused.
+# Required repository variables: SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY
+name: Supabase health check
+on:
+  schedule:
+    - cron: '23 21 * * *' # 06:23 JST, once a day
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: healthcheck
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/healthcheck.mjs
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}

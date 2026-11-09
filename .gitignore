@@ -1,0 +1,16 @@
+node_modules
+.nuxt
+.output
+.data
+.nitro
+.cache
+dist
+logs
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+supabase/.env
+supabase/.temp
+supabase/.branches

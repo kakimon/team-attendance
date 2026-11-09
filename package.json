@@ -1,0 +1,31 @@
+{
+  "name": "team-attendance",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "typecheck": "nuxt typecheck",
+    "test": "vitest run",
+    "test:db": "vitest run tests/db"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.109.0",
+    "lucide-vue-next": "1.0.0",
+    "nuxt": "3.21.11",
+    "vue": "3.5.45",
+    "vue-router": "4.6.4"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.15",
+    "@tailwindcss/vite": "4.3.5",
+    "daisyui": "5.7.50",
+    "tailwindcss": "4.3.5",
+    "typescript": "6.0.3",
+    "vitest": "4.1.12",
+    "vue-tsc": "3.3.14"
+  }
+}
