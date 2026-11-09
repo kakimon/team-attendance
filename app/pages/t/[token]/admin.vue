@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 管理: share URL, create events, totals. Server re-checks admin role on every write.
-import { CalendarDays, CalendarPlus, ChartColumn, Link, Lock } from 'lucide-vue-next'
+import { CalendarDays, CalendarPlus, ChartColumn, Link, Lock, PenLine } from 'lucide-vue-next'
 import type { TeamSnapshot } from '~/utils/types'
 
 const repo = useRepo()
@@ -61,11 +61,16 @@ async function create(s: TeamSnapshot, reload: () => Promise<void>) {
         </form>
       </AppCard>
 
-      <AppCard title="出欠集計" :icon="ChartColumn">
+      <AppCard title="予定と出欠集計" :icon="ChartColumn">
         <EmptyState v-if="!snap.events.length" :icon="CalendarDays" title="予定はまだありません" class="shadow-none" />
         <ul class="space-y-5">
           <li v-for="e in snap.events" :key="e.id" class="space-y-3">
-            <EventInfo :e="e" />
+            <div class="flex items-start gap-2">
+              <div class="min-w-0 flex-1"><EventInfo :e="e" /></div>
+              <NuxtLink :to="`/t/${snap.team.share_token}/events/${e.id}`" class="btn btn-sm border-base-300 bg-base-100" :aria-label="`${e.title}を編集`">
+                <PenLine class="size-4" />編集
+              </NuxtLink>
+            </div>
             <SummaryBar :s="summaryOf(snap, e.id)" compact />
           </li>
         </ul>

@@ -17,14 +17,21 @@ grant execute on function auth.uid() to anon, authenticated;
 grant usage on schema public to anon, authenticated;
 `
 
-export async function createDb() {
+const MIGRATIONS = join(import.meta.dirname, '../../supabase/migrations')
+export const migrationFiles = () => readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql')).sort()
+
+/** Fresh DB with the Supabase stub and migrations applied (optionally only those before `before`). */
+export async function createDb(opts: { before?: string } = {}) {
   const db = new PGlite()
   await db.exec(SUPABASE_STUB)
-  const dir = join(import.meta.dirname, '../../supabase/migrations')
-  for (const f of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
-    await db.exec(readFileSync(join(dir, f), 'utf8'))
+  for (const f of migrationFiles().filter((f) => !opts.before || f < opts.before)) {
+    await db.exec(readFileSync(join(MIGRATIONS, f), 'utf8'))
   }
   return db
+}
+
+export async function applyMigration(db: PGlite, file: string) {
+  await db.exec(readFileSync(join(MIGRATIONS, file), 'utf8'))
 }
 
 export type Db = Awaited<ReturnType<typeof createDb>>

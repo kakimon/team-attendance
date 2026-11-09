@@ -1,11 +1,14 @@
 <script setup lang="ts">
-// 家族招待の受け取り: become an additional guardian (single use, 24h). Server-checked.
-import { CircleCheck, PenLine, ShieldCheck, UserPlus } from 'lucide-vue-next'
+// 家族招待の受け取り（24時間・1回限り。サーバー側で検証）
+// すでに保護者の場合は正常な案内（招待は消費されない）。
+import { BadgeCheck, CircleCheck, PenLine, ShieldCheck, UserPlus } from 'lucide-vue-next'
+import type { AcceptResult } from '~/utils/types'
+
 const route = useRoute()
 const repo = useRepo()
 const { user } = useAuth()
 const displayName = ref(user.value?.name ?? '')
-const result = ref<{ share_token: string } | null>(null)
+const result = ref<AcceptResult | null>(null)
 const error = ref('')
 const busy = ref(false)
 
@@ -26,12 +29,26 @@ async function accept() {
   <div>
     <AppHeader title="家族からの招待" subtitle="みんなの出欠" back="/" />
     <main class="mx-auto max-w-md space-y-4 px-4 py-5">
-      <AppCard v-if="result">
+      <!-- 受け取り完了 -->
+      <AppCard v-if="result?.status === 'accepted'">
         <div class="flex flex-col items-center gap-3 text-center">
           <span class="grid size-14 place-items-center rounded-2xl bg-success/12 text-success"><CircleCheck class="size-8" /></span>
           <p class="text-lg font-bold">保護者として追加されました</p>
-          <p class="text-sm text-base-content/60">お子さんの出欠を入力できます。</p>
+          <p class="text-sm text-base-content/60">{{ result.player_name }} さんの出欠を入力できます。</p>
           <NuxtLink :to="`/t/${result.share_token}/answer`" class="btn btn-brand btn-lg mt-2 w-full"><PenLine class="size-5" />出欠入力へ</NuxtLink>
+        </div>
+      </AppCard>
+
+      <!-- すでに保護者（正常な案内） -->
+      <AppCard v-else-if="result?.status === 'already_guardian'">
+        <div class="flex flex-col items-center gap-3 text-center">
+          <span class="grid size-14 place-items-center rounded-2xl bg-info/12 text-info"><BadgeCheck class="size-8" /></span>
+          <p class="text-lg font-bold">すでに登録済みです</p>
+          <p class="text-sm text-base-content/65">
+            あなたは {{ result.player_name }} さんの保護者として登録されています。<br>このまま出欠を入力できます。
+          </p>
+          <NuxtLink :to="`/t/${result.share_token}/answer`" class="btn btn-brand btn-lg mt-2 w-full"><PenLine class="size-5" />出欠入力へ</NuxtLink>
+          <p class="text-xs text-base-content/55">この招待リンクは使われていません。ほかの家族に送る場合は、そのまま使えます。</p>
         </div>
       </AppCard>
 

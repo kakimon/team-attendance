@@ -2,7 +2,7 @@
 // Writes = RPC only (SECURITY DEFINER functions with explicit checks).
 import {
   ERROR_CODES, RepoError,
-  type Attendance, type Member, type Player, type Repo, type Role, type Team, type TeamEvent,
+  type AcceptResult, type Attendance, type Member, type Player, type Repo, type Role, type Team, type TeamEvent,
 } from '../utils/types'
 
 type DbError = { message: string } | null
@@ -106,16 +106,33 @@ export function createSupabaseRepo(db: DbClient, uid: () => string): Repo {
       }))
     },
 
+    async updateEvent(eventId, ev) {
+      unwrap(await db.rpc('update_event', {
+        p_event_id: eventId, p_title: ev.title, p_starts_at: ev.starts_at, p_location: ev.location, p_note: ev.note,
+      }))
+    },
+
+    async deleteEvent(eventId) {
+      unwrap(await db.rpc('delete_event', { p_event_id: eventId }))
+    },
+
+    async updatePlayer(playerId, name, note, confirmSimilar) {
+      return unwrap(await db.rpc('update_player', {
+        p_player_id: playerId, p_name: name, p_note: note, p_confirm_similar: confirmSimilar,
+      }))
+    },
+
+    async archivePlayer(playerId) {
+      unwrap(await db.rpc('archive_player', { p_player_id: playerId }))
+    },
+
     async createInvitation(playerId) {
       return unwrap(await db.rpc('create_guardian_invitation', { p_player_id: playerId }))
     },
 
     async acceptInvitation(token, displayName) {
-      const r = unwrap<{ player_id: string; team_id: string }>(
+      return unwrap<AcceptResult>(
         await db.rpc('accept_guardian_invitation', { p_token: token, p_display_name: displayName }))
-      const t = unwrap<Team[]>(await db.from('teams').select('id,name,share_token').eq('id', r.team_id))[0]
-      if (!t) throw new RepoError('not_found')
-      return { ...r, share_token: t.share_token }
     },
   }
 }

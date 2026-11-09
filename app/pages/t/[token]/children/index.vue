@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // うちの子: my children; each links to the family invitation page.
-import { ChevronRight, Plus, UserPlus, UsersRound } from 'lucide-vue-next'
+import { ChevronRight, Plus, Settings2, UsersRound } from 'lucide-vue-next'
 import type { TeamSnapshot } from '~/utils/types'
 
 const route = useRoute()
@@ -23,7 +23,7 @@ const mine = (s: TeamSnapshot) => s.players.filter((p) => s.myPlayerIds.includes
             <TeamAvatar :name="p.name" soft />
             <div class="min-w-0 flex-1">
               <p class="truncate font-bold">{{ p.name }}</p>
-              <p class="flex items-center gap-1 text-xs text-primary"><UserPlus class="size-3.5" />家族を招待</p>
+              <p class="flex items-center gap-1 text-xs text-primary"><Settings2 class="size-3.5" />設定・家族招待</p>
             </div>
             <span v-if="p.note" class="badge badge-ghost">{{ p.note }}</span>
             <ChevronRight class="size-5 text-base-content/35" />

@@ -38,9 +38,22 @@ export interface TeamSnapshot {
 
 export interface TeamPreview { id: string; name: string; is_member: boolean; role: Role | null }
 
+export type SimilarPlayer = Pick<Player, 'id' | 'name' | 'note'>
 export type RegisterResult =
-  | { status: 'similar_found'; similar: Pick<Player, 'id' | 'name' | 'note'>[] }
+  | { status: 'similar_found'; similar: SimilarPlayer[] }
   | { status: 'created'; player_id: string }
+export type UpdatePlayerResult =
+  | { status: 'similar_found'; similar: SimilarPlayer[] }
+  | { status: 'updated' }
+export type EventInput = { title: string; starts_at: string; location: string | null; note: string | null }
+/** 'already_guardian' is a normal result (the invitation is not consumed). */
+export interface AcceptResult {
+  status: 'accepted' | 'already_guardian'
+  player_id: string
+  player_name: string
+  team_id: string
+  share_token: string
+}
 
 /** Data access. Writes always go through server-side checked RPCs. */
 export interface Repo {
@@ -51,9 +64,17 @@ export interface Repo {
   loadTeam(teamId: string): Promise<TeamSnapshot | null>
   registerPlayer(teamId: string, name: string, note: string | null, confirmSimilar: boolean): Promise<RegisterResult>
   setAttendance(eventId: string, playerId: string, status: Status, comment: string | null): Promise<void>
-  createEvent(teamId: string, ev: { title: string; starts_at: string; location: string | null; note: string | null }): Promise<void>
+  createEvent(teamId: string, ev: EventInput): Promise<void>
+  /** Admin only. Answers are kept. */
+  updateEvent(eventId: string, ev: EventInput): Promise<void>
+  /** Admin only. Logical delete: hidden, answers kept in the DB. */
+  deleteEvent(eventId: string): Promise<void>
+  /** Guardians of the child only. */
+  updatePlayer(playerId: string, name: string, note: string | null, confirmSimilar: boolean): Promise<UpdatePlayerResult>
+  /** Guardians of the child only. Logical cancel (archived_at), history kept. */
+  archivePlayer(playerId: string): Promise<void>
   createInvitation(playerId: string): Promise<{ token: string; expires_at: string }>
-  acceptInvitation(token: string, displayName: string): Promise<{ player_id: string; team_id: string; share_token: string }>
+  acceptInvitation(token: string, displayName: string): Promise<AcceptResult>
 }
 
 export const ERROR_CODES = [

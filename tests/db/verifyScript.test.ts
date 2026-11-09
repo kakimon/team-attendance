@@ -23,7 +23,25 @@ it('cloud verification script passes and rolls everything back', async () => {
   const err = await db.exec(sql).then(() => null, (e: Error) => e.message)
   expect(err).toMatch(/^VERIFY_RESULT/)
   expect(err).not.toContain('★')
-  expect(err!.match(/拒否/g)!.length).toBe(10)
+  expect(err!.match(/拒否/g)!.length).toBe(17)
   expect(await count()).toBe(before) // nothing persisted
   console.log(err)
+})
+
+it('also works when every account has joined the team (C = temporary ID)', async () => {
+  const db = await createDb()
+  const [A, B, X] = ['21000000-0000-0000-0000-00000000000a', '21000000-0000-0000-0000-00000000000b', '21000000-0000-0000-0000-00000000000c']
+  for (const u of [A, B, X]) await addUser(db, u)
+  const team = await asUser(db, A, async () => (await db.query<{ id: string; share_token: string }>(
+    `select id, share_token from public.create_team('テストFC', 'テスト監督')`)).rows[0]!)
+  await asUser(db, A, () => db.query(`select public.create_event($1, '練習', now() + interval '1 day')`, [team.id]))
+  await asUser(db, A, () => db.query(`select public.register_player($1, 'テスト　太郎')`, [team.id]))
+  for (const u of [B, X]) await asUser(db, u, () => db.query(`select public.join_team($1, 'x')`, [team.share_token]))
+  const sql = readFileSync(join(import.meta.dirname, '../../scripts/verify-cloud-server-deny.sql'), 'utf8')
+  const err = await db.exec(sql).then(() => null, (e: Error) => e.message)
+  expect(err).toMatch(/^VERIFY_RESULT/)
+  expect(err).toContain('仮 ID')
+  expect(err).not.toContain('★')
+  expect(err!.match(/拒否/g)!.length).toBe(17)
+  expect((await db.query<{ n: number }>('select count(*)::int as n from auth.users')).rows[0]!.n).toBe(3)
 })
