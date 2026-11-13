@@ -1,6 +1,11 @@
 import type { PrerenderRoute } from 'nitropack'
 import tailwindcss from '@tailwindcss/vite'
 
+// Legal / contact pages are pre-generated only if they are in this tree
+// (a public export made with --without-legal-drafts leaves them out). Filled by 'pages:extend'.
+const LEGAL_PATHS = ['/terms', '/privacy', '/contact']
+const legalRoutes = new Set<string>()
+
 // SPA (static hosting friendly). Supabase values come from env vars only:
 //   NUXT_PUBLIC_SUPABASE_URL, NUXT_PUBLIC_SUPABASE_ANON_KEY
 // When they are empty the app runs in mock mode (in-memory demo data).
@@ -43,9 +48,15 @@ export default defineNuxtConfig({
   },
   typescript: { strict: true },
   hooks: {
+    'pages:extend'(pages) {
+      for (const p of pages) if (LEGAL_PATHS.includes(p.path)) legalRoutes.add(p.path)
+    },
     // Nuxt emits its CSS/JS <link>s before app.head metas, so the first asset requests would
     // still send a Referer (with tokens in the URL). Put the policy right after <meta charset>.
     'nitro:init'(nitro) {
+      nitro.hooks.hook('prerender:routes', (routes: Set<string>) => {
+        for (const r of legalRoutes) routes.add(r)
+      })
       nitro.hooks.hook('prerender:generate', (route: PrerenderRoute) => {
         if (typeof route.contents === 'string' && route.fileName?.endsWith('.html')) {
           route.contents = route.contents.replace(/<meta charset="utf-8">/i,
@@ -61,7 +72,8 @@ export default defineNuxtConfig({
       // SPA fallback (404.html) keeps the OAuth ?code= query untouched.
       ignore: ['/auth/callback'],
       // Relay page for shared links: must exist as a real file (HTTP 200 on GitHub Pages).
-      routes: ['/j'],
+      // Legal / contact pages (when present): readable without login, real files so direct access works.
+      routes: ['/j'], // + legal pages that exist (added in the 'prerender:routes' hook below)
     },
   },
 })

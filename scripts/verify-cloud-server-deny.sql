@@ -13,7 +13,7 @@
 do $$
 declare
   team uuid; ev uuid; taro uuid; jiro uuid;
-  a uuid; b uuid; c uuid;
+  a uuid; b uuid; c uuid; sa uuid; sb uuid; sc uuid;
   tok text; v jsonb; n int; out text := '';
 begin
   -- 準備（postgres として ID だけ取得）
@@ -29,6 +29,14 @@ begin
     c := gen_random_uuid();
     out := out || E'\n（C：チーム外のアカウントがないため検証用の仮 ID を使用）';
   end if;
+  -- RPCs require the token's login session to exist (20261113000000): use each account's latest
+  -- session (read only). A and B must have logged in at least once and not logged out everywhere.
+  select id into sa from auth.sessions where user_id = a order by created_at desc limit 1;
+  select id into sb from auth.sessions where user_id = b order by created_at desc limit 1;
+  select id into sc from auth.sessions where user_id = c order by created_at desc limit 1;
+  if to_regprocedure('public.purge_account_data(uuid,uuid,interval)') is not null and (sa is null or sb is null) then
+    raise exception 'PRECONDITION_FAILED: A/B have no login session (log in once in the browser)';
+  end if;
   if team is null or a is null or b is null or c is null or ev is null or taro is null then
     raise exception 'PRECONDITION_FAILED team=% a=% b=% c=% ev=% taro=%', team is not null, a is not null, b is not null, c is not null, ev is not null, taro is not null;
   end if;
@@ -41,14 +49,14 @@ begin
 
   -- ---- A: 検証用の子（架空）を登録（ロールバックで消える）
   perform set_config('request.jwt.claim.sub', a::text, true);
-  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated', 'session_id', sa)::text, true);
   v := public.register_player(team, '検証用 じろう', null, true);
   jiro := (v ->> 'player_id')::uuid;
   out := out || E'\n[A] 検証用の子を登録: ' || (v ->> 'status');
 
   -- ---- B: A の子（招待前）を編集できないこと
   perform set_config('request.jwt.claim.sub', b::text, true);
-  perform set_config('request.jwt.claims', json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claims', json_build_object('sub', b, 'role', 'authenticated', 'session_id', sb)::text, true);
   begin
     perform public.set_attendance(ev, jiro, 'absent', null);
     out := out || E'\n[B] 他家庭の子の出欠変更RPC: ★許可されてしまった';
@@ -97,7 +105,7 @@ begin
 
   -- ---- C: チーム外の人は見えず、編集もできないこと
   perform set_config('request.jwt.claim.sub', c::text, true);
-  perform set_config('request.jwt.claims', json_build_object('sub', c, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claims', json_build_object('sub', c, 'role', 'authenticated', 'session_id', sc)::text, true);
   select count(*) into n from public.players where team_id = team;
   out := out || E'\n[C] チーム外から見える子どもの数: ' || n || case when n = 0 then '（見えない）' else ' ★見えてしまった' end;
   begin
@@ -111,14 +119,14 @@ begin
 
   -- ---- 家族招待：A が作成 → B が受け取る → C の再利用は拒否
   perform set_config('request.jwt.claim.sub', a::text, true);
-  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated', 'session_id', sa)::text, true);
   v := public.create_guardian_invitation(jiro);
   tok := v ->> 'token';  -- never printed
   out := out || E'\n[A] 招待リンク作成: OK（有効期限まで約 '
     || round(extract(epoch from ((v ->> 'expires_at')::timestamptz - now())) / 3600) || ' 時間）';
 
   perform set_config('request.jwt.claim.sub', b::text, true);
-  perform set_config('request.jwt.claims', json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claims', json_build_object('sub', b, 'role', 'authenticated', 'session_id', sb)::text, true);
   v := public.accept_guardian_invitation(tok, 'test2');
   out := out || E'\n[B] 招待を受け取る: OK';
   begin
@@ -127,7 +135,7 @@ begin
   exception when others then out := out || E'\n[B] 招待後の出欠変更: ★拒否された (' || sqlerrm || ')'; end;
 
   perform set_config('request.jwt.claim.sub', c::text, true);
-  perform set_config('request.jwt.claims', json_build_object('sub', c, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claims', json_build_object('sub', c, 'role', 'authenticated', 'session_id', sc)::text, true);
   begin
     perform public.accept_guardian_invitation(tok, 'x');
     out := out || E'\n[C] 使用済み招待リンクの再利用: ★受け取れてしまった';
@@ -139,7 +147,7 @@ begin
 
   -- ---- Phase 4-A: 論理削除・取り消しの後は回答できない（データは残る）
   perform set_config('request.jwt.claim.sub', a::text, true);
-  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated', 'session_id', sa)::text, true);
   perform public.update_event(ev, '検証用に変更', now() + interval '3 days');
   select count(*) into n from public.attendance where event_id = ev;
   out := out || E'\n[A] 予定の日時変更: OK（変更後も見える回答 ' || n || ' 件）';
@@ -148,7 +156,7 @@ begin
   out := out || E'\n[A] 予定の論理削除・子どもの取り消し: OK';
 
   perform set_config('request.jwt.claim.sub', b::text, true);
-  perform set_config('request.jwt.claims', json_build_object('sub', b, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claims', json_build_object('sub', b, 'role', 'authenticated', 'session_id', sb)::text, true);
   begin
     perform public.set_attendance(ev, taro, 'attend', null);
     out := out || E'\n[B] 削除済みの予定への回答: ★許可されてしまった';

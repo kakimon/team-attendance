@@ -72,6 +72,7 @@ async function accept() {
           <p>招待リンクは24時間・1回限り有効です。心当たりのない招待は受け取らないでください。</p>
         </div>
       </template>
+      <LegalFooter />
     </main>
   </div>
 </template>

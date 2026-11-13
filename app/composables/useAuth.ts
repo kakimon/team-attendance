@@ -44,13 +44,33 @@ export function useAuth() {
   function signInDemo(id: string) {
     user.value = $demoUsers.find((u) => u.id === id) ?? null
     localStorage.setItem('demo:user', id)
+    localStorage.setItem('demo:loginAt', String(Date.now()))
   }
 
-  async function signOut() {
-    if ($supabase) await $supabase.auth.signOut()
+  /**
+   * Fresh Google login for sensitive steps (account deletion). Creates a new Supabase session,
+   * whose creation time the server checks. Returns to `returnPath` via /auth/callback.
+   */
+  async function reauthenticate(returnPath: string) {
+    if (!$supabase) {
+      localStorage.setItem('demo:loginAt', String(Date.now())) // demo: counts as a fresh login, stay on the page
+      return
+    }
+    sessionStorage.setItem('auth:redirect', returnPath)
+    const base = useRuntimeConfig().app.baseURL.replace(/\/$/, '')
+    const { error } = await $supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${location.origin}${base}/auth/callback`, queryParams: { prompt: 'select_account' } },
+    })
+    if (error) throw error
+  }
+
+  /** `local`: only forget this device's session (used after the account was deleted on the server). */
+  async function signOut(scope: 'global' | 'local' = 'global') {
+    if ($supabase) await $supabase.auth.signOut({ scope }).catch(() => {})
     else localStorage.removeItem('demo:user')
     user.value = null
   }
 
-  return { user, ready, isDemo, init, signInWithGoogle, signInDemo, signOut }
+  return { user, ready, isDemo, init, signInWithGoogle, signInDemo, reauthenticate, signOut }
 }

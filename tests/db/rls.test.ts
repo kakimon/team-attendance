@@ -51,7 +51,7 @@ describe('RLS is on for every table', () => {
        where n.nspname = 'public' and c.relkind = 'r' order by 1`)
     expect(rows.map((r) => r.relname)).toEqual([
       'attendance', 'events', 'guardian_invitations', 'player_guardians',
-      'players', 'team_members', 'teams',
+      'players', 'team_members', 'team_owner_transfers', 'teams',
     ])
     expect(rows.every((r) => r.relrowsecurity)).toBe(true)
   })

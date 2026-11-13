@@ -11,12 +11,17 @@ const error = ref('')
 const inApp = ref<'line' | 'other' | null>(null)
 const teams = ref<(Team & { role: Role })[] | null>(null)
 const signingIn = ref(false)
+/** Account deletion stopped half-way (data removed, account not yet): offer to finish it. */
+const deletionPending = ref(false)
 
 onMounted(() => (inApp.value = detectInAppBrowser(navigator.userAgent)))
 
 async function afterLogin() {
   if (redirect) return navigateTo(redirect)
-  try { teams.value = await useRepo().myTeams() } catch (e) { error.value = errorMessage(e) }
+  try {
+    teams.value = await useRepo().myTeams()
+    if (!teams.value.length) deletionPending.value = (await useRepo().deletionPreview()).deletion_pending
+  } catch (e) { error.value = errorMessage(e) }
 }
 if (user.value) await afterLogin()
 
@@ -46,6 +51,12 @@ const features = [
   <div v-if="user">
     <AppHeader title="参加しているチーム" subtitle="みんなの出欠" />
     <main class="mx-auto max-w-3xl space-y-4 px-4 py-5 md:px-6">
+      <div v-if="deletionPending" role="alert" class="rounded-box border border-error/40 bg-error/5 p-4 text-sm">
+        <p class="font-bold">退会の手続きが途中です</p>
+        <p class="mt-1 text-base-content/70">データの削除は完了しています。アカウントの削除を完了してください。</p>
+        <NuxtLink to="/account/delete" class="btn btn-error btn-sm mt-3">退会を完了する</NuxtLink>
+      </div>
+      <OwnerTransferInbox @changed="afterLogin" />
       <div v-if="teams === null && !error" class="space-y-3">
         <div v-for="i in 2" :key="i" class="skeleton h-20 rounded-box bg-base-100" />
       </div>
@@ -70,6 +81,7 @@ const features = [
         <Plus class="size-4" />新しいチームを作る
       </NuxtLink>
       <p class="text-center text-xs text-base-content/50">チームを作るのは代表者・コーチの方です。保護者の方は共有URLから参加してください。</p>
+      <LegalFooter />
     </main>
   </div>
 
@@ -123,6 +135,7 @@ const features = [
           </div>
         </li>
       </ul>
+      <LegalFooter />
     </main>
   </div>
 </template>

@@ -2,7 +2,8 @@
 // Writes = RPC only (SECURITY DEFINER functions with explicit checks).
 import {
   ERROR_CODES, RepoError,
-  type AcceptResult, type Attendance, type Member, type Player, type Repo, type Role, type Team, type TeamEvent,
+  type AcceptResult, type Attendance, type DeletionPreview, type Member, type OwnerTransfers, type Player, type Repo,
+  type Role, type Team, type TeamEvent, type TransferResponse,
 } from '../utils/types'
 
 type DbError = { message: string } | null
@@ -22,8 +23,9 @@ export interface DbClient {
   rpc(fn: string, args?: Record<string, unknown>): PromiseLike<Res>
 }
 
-function codeOf(message: string) {
-  return ERROR_CODES.find((c) => message === c || message.includes(c)) ?? 'unknown'
+/** Error code in a DB/function message, matched as a whole word ('transfer_not_found' is not 'not_found'). */
+export function codeOf(message: string) {
+  return ERROR_CODES.find((c) => new RegExp(`(^|[^a-z_])${c}($|[^a-z_])`).test(message)) ?? 'unknown'
 }
 function unwrap<T>(r: Res): T {
   if (r.error) throw new RepoError(codeOf(r.error.message), r.error.message)
@@ -33,7 +35,10 @@ function unwrap<T>(r: Res): T {
 /** Show events from this long ago (so "today" stays visible). */
 const PAST_MS = 24 * 3600_000
 
-export function createSupabaseRepo(db: DbClient, uid: () => string): Repo {
+/** Calls an Edge Function; `error.code` is the function's error code (or 'unknown'). */
+export type InvokeFn = (fn: string, body: Record<string, unknown>) => Promise<{ error: { code: string } | null }>
+
+export function createSupabaseRepo(db: DbClient, uid: () => string, invoke?: InvokeFn): Repo {
   return {
     async myTeams() {
       const mine = unwrap<{ team_id: string; role: Role }[]>(
@@ -133,6 +138,34 @@ export function createSupabaseRepo(db: DbClient, uid: () => string): Repo {
     async acceptInvitation(token, displayName) {
       return unwrap<AcceptResult>(
         await db.rpc('accept_guardian_invitation', { p_token: token, p_display_name: displayName }))
+    },
+
+    async deletionPreview() {
+      return unwrap<DeletionPreview>(await db.rpc('account_deletion_preview'))
+    },
+
+    async myOwnerTransfers() {
+      return unwrap<OwnerTransfers>(await db.rpc('my_owner_transfers'))
+    },
+
+    async requestOwnerTransfer(teamId, toUser) {
+      unwrap(await db.rpc('request_owner_transfer', { p_team_id: teamId, p_to_user: toUser }))
+    },
+
+    async cancelOwnerTransfer(teamId) {
+      unwrap(await db.rpc('cancel_owner_transfer', { p_team_id: teamId }))
+    },
+
+    async respondOwnerTransfer(teamId, accept) {
+      return unwrap<{ status: TransferResponse }>(
+        await db.rpc('respond_owner_transfer', { p_team_id: teamId, p_accept: accept })).status
+    },
+
+    async deleteAccount(confirm) {
+      if (!invoke) throw new RepoError('unknown', 'functions are not configured')
+      // No user id is sent: the function identifies the user from the access token.
+      const { error } = await invoke('delete-account', { confirm })
+      if (error) throw new RepoError(codeOf(error.code), error.code)
     },
   }
 }

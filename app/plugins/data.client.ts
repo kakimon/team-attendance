@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { createSupabaseRepo, type DbClient } from '~/repo/supabaseRepo'
+import { createSupabaseRepo, type DbClient, type InvokeFn } from '~/repo/supabaseRepo'
 import { resolveAppMode, type AppMode } from '~/utils/appMode'
 import type { Repo } from '~/utils/types'
 
@@ -32,11 +32,22 @@ export default defineNuxtPlugin(async () => {
     supabase = createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
       auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
     })
-    repo = createSupabaseRepo(supabase as unknown as DbClient, uid)
+    const client = supabase
+    // Edge Functions: supabase-js adds the user's access token. Error bodies carry { code }.
+    const invoke: InvokeFn = async (fn, body) => {
+      const { error } = await client.functions.invoke(fn, { body })
+      if (!error) return { error: null }
+      const res = (error as { context?: unknown }).context
+      const code = res instanceof Response
+        ? await res.json().then((j: { code?: string }) => j?.code ?? 'unknown', () => 'unknown')
+        : 'unknown'
+      return { error: { code } }
+    }
+    repo = createSupabaseRepo(client as unknown as DbClient, uid, invoke)
   } else if (import.meta.dev && mode === 'demo') {
     // Dynamic import inside an import.meta.dev branch: not shipped in production builds.
     const m = await import('~/repo/mockRepo')
-    repo = m.createMockRepo(uid, () => currentUser.value?.name ?? '')
+    repo = m.createMockRepo(uid, () => currentUser.value?.name ?? '', () => Number(localStorage.getItem('demo:loginAt') ?? 0))
     demoUsers = m.MOCK_USERS
   }
 

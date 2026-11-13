@@ -55,6 +55,29 @@ export interface AcceptResult {
   share_token: string
 }
 
+/** What deleting the account would do (computed by the server for the caller only). */
+export interface DeletionPreview {
+  /** App data already removed, Auth deletion not finished (retry needed). */
+  deletion_pending: boolean
+  /** Seconds the last Google login still counts as recent (0 = log in again). */
+  reauth_seconds_left: number
+  teams_to_hand_over: {
+    team_id: string; team_name: string
+    candidates: { user_id: string; display_name: string; role: Role }[]
+    pending: { to_user: string; to_name: string | null; expires_at: string } | null
+  }[]
+  teams_to_close: { team_id: string; team_name: string }[]
+  teams_to_leave: { team_id: string; team_name: string; role: Role }[]
+  children_to_delete: { player_id: string; name: string; team_name: string; answers: number }[]
+  children_kept_by_family: { player_id: string; name: string; team_name: string }[]
+}
+export interface OwnerTransfers {
+  incoming: { team_id: string; team_name: string; from_name: string | null; expires_at: string }[]
+  outgoing: { team_id: string; team_name: string; to_user: string; to_name: string | null; expires_at: string }[]
+}
+export type TransferResponse = 'accepted' | 'declined' | 'expired' | 'stale'
+export const DELETE_CONFIRM_TEXT = '退会する'
+
 /** Data access. Writes always go through server-side checked RPCs. */
 export interface Repo {
   myTeams(): Promise<(Team & { role: Role })[]>
@@ -75,11 +98,21 @@ export interface Repo {
   archivePlayer(playerId: string): Promise<void>
   createInvitation(playerId: string): Promise<{ token: string; expires_at: string }>
   acceptInvitation(token: string, displayName: string): Promise<AcceptResult>
+  deletionPreview(): Promise<DeletionPreview>
+  myOwnerTransfers(): Promise<OwnerTransfers>
+  /** Owner asks a member to take over; nothing changes until that member accepts. */
+  requestOwnerTransfer(teamId: string, toUser: string): Promise<void>
+  cancelOwnerTransfer(teamId: string): Promise<void>
+  respondOwnerTransfer(teamId: string, accept: boolean): Promise<TransferResponse>
+  /** Deletes the signed-in account (server identifies the user from the token). */
+  deleteAccount(confirm: string): Promise<void>
 }
 
 export const ERROR_CODES = [
   'not_authenticated', 'forbidden', 'not_found', 'team_not_found', 'invitation_invalid',
   'already_guardian', 'too_many_active_invitations', 'name_required', 'invalid_status', 'invalid_role',
+  'session_expired', 'owner_must_transfer', 'reauth_required', 'account_deletion_pending', 'transfer_not_found',
+  'invalid_new_owner', 'auth_delete_failed', 'purge_failed', 'confirm_required',
 ] as const
 export type ErrorCode = (typeof ERROR_CODES)[number] | 'unknown'
 
@@ -100,6 +133,15 @@ export const ERROR_MESSAGE: Record<ErrorCode, string> = {
   name_required: '名前を入力してください。',
   invalid_status: '出欠の値が正しくありません。',
   invalid_role: '権限の値が正しくありません。',
+  session_expired: 'ログインの有効期限が切れました。もう一度ログインしてください。',
+  owner_must_transfer: 'オーナーのチームがあります。先にほかのメンバーへ引き継いでください。',
+  reauth_required: '本人確認のため、もう一度 Google でログインしてください。',
+  account_deletion_pending: '退会の手続きが途中です。「アカウント」から退会を完了してください。',
+  transfer_not_found: 'この引き継ぎの依頼は、すでに取り消されたか、期限が切れています。',
+  invalid_new_owner: '引き継ぎ先に選べないメンバーです。',
+  auth_delete_failed: 'データの削除は完了しましたが、アカウントの削除が完了していません。もう一度お試しください。',
+  purge_failed: '退会の処理に失敗しました（データは変更されていません）。もう一度お試しください。',
+  confirm_required: '確認の文字を入力してください。',
   unknown: 'エラーが発生しました。通信状況を確認して、もう一度お試しください。',
 }
 

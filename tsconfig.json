@@ -1,4 +1,4 @@
 {
   "extends": "./.nuxt/tsconfig.json",
-  "exclude": ["tests", "vitest.config.ts", "node_modules", ".output"]
+  "exclude": ["tests", "vitest.config.ts", "node_modules", ".output", "supabase/functions", "scripts/compat-published-app.ts"]
 }

@@ -7,13 +7,20 @@ import { PGlite } from '@electric-sql/pglite'
 const SUPABASE_STUB = `
 create role anon nologin;
 create role authenticated nologin;
+create role service_role nologin;
 create schema auth;
 create table auth.users (id uuid primary key);
+create table auth.sessions (id uuid primary key, user_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now());
 grant usage on schema auth to anon, authenticated;
 create function auth.uid() returns uuid language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
 $$;
+create function auth.jwt() returns jsonb language sql stable as $$
+  select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb
+$$;
 grant execute on function auth.uid() to anon, authenticated;
+grant execute on function auth.jwt() to anon, authenticated;
 grant usage on schema public to anon, authenticated;
 `
 
@@ -36,18 +43,25 @@ export async function applyMigration(db: PGlite, file: string) {
 
 export type Db = Awaited<ReturnType<typeof createDb>>
 
+/** Adds a user with one login session whose id equals the user id (the default token session). */
 export async function addUser(db: Db, id: string) {
   await db.query('insert into auth.users (id) values ($1)', [id])
+  await db.query('insert into auth.sessions (id, user_id) values ($1, $1)', [id])
 }
 
-/** Run a callback as an authenticated browser user (or anon when uid is null). */
-export async function asUser<T>(db: Db, uid: string | null, fn: () => Promise<T>): Promise<T> {
+/**
+ * Run a callback as an authenticated browser user (or anon when uid is null).
+ * The token carries `sub` and `session_id` like a Supabase access token
+ * (session defaults to the user's default session from addUser).
+ */
+export async function asUser<T>(db: Db, uid: string | null, fn: () => Promise<T>, session: string | null = uid): Promise<T> {
   await db.exec(`set role ${uid ? 'authenticated' : 'anon'}`)
-  await db.query(`select set_config('request.jwt.claim.sub', $1, false)`, [uid ?? ''])
+  const claims = uid ? JSON.stringify({ sub: uid, role: 'authenticated', ...(session ? { session_id: session } : {}) }) : ''
+  await db.query(`select set_config('request.jwt.claim.sub', $1, false), set_config('request.jwt.claims', $2, false)`, [uid ?? '', claims])
   try {
     return await fn()
   } finally {
     await db.exec(`reset role`)
-    await db.query(`select set_config('request.jwt.claim.sub', '', false)`)
+    await db.query(`select set_config('request.jwt.claim.sub', '', false), set_config('request.jwt.claims', '', false)`)
   }
 }

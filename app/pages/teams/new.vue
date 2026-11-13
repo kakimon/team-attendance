@@ -58,6 +58,7 @@ async function submit() {
         <button class="btn btn-brand btn-lg w-full" :disabled="busy">チームを作成する</button>
         <p class="text-center text-xs text-base-content/55">作成したあなたがチームの管理者（オーナー）になります。</p>
       </form>
+      <LegalFooter />
     </main>
   </div>
 </template>

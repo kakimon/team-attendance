@@ -36,6 +36,7 @@ const roleLabel = computed(() => (state.snap ? { owner: 'オーナー', admin: '
           :text="state.error || '共有URLが正しいか、もう一度確認してください。'">
           <NuxtLink to="/" class="btn btn-outline border-base-300">チーム一覧へ</NuxtLink>
         </EmptyState>
+        <LegalFooter />
       </main>
     </template>
 
@@ -60,6 +61,7 @@ const roleLabel = computed(() => (state.snap ? { owner: 'オーナー', admin: '
           <Lock class="mt-0.5 size-4 shrink-0 text-primary" />
           <p>参加すると出欠一覧を見られます。出欠を入力できるのは、自分で登録した子（または家族から招待された子）だけです。</p>
         </div>
+        <LegalFooter />
       </main>
     </template>
 
@@ -71,6 +73,7 @@ const roleLabel = computed(() => (state.snap ? { owner: 'オーナー', admin: '
       <main class="mx-auto max-w-3xl space-y-4 px-4 pt-5 pb-28 md:px-6 md:pb-10">
         <div v-if="state.error" role="alert" class="alert alert-error rounded-box">{{ state.error }}</div>
         <slot :snap="state.snap" :reload="load" />
+        <LegalFooter />
       </main>
       <TeamTabs :token="token" :is-admin="isAdminRole(state.snap)" placement="bottom" />
     </template>
