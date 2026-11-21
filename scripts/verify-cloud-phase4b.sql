@@ -11,7 +11,7 @@ do $$
 declare
   team uuid; share text; o uuid; g uuid; kid uuid; ev uuid; newkid uuid; newev uuid;
   so uuid; sg uuid; fake uuid := gen_random_uuid();
-  n int; c int; v jsonb; out text := ''; bad int := 0; t text; seen text;
+  n int; c int; v jsonb; out text := ''; bad int := 0; t text; seen text; u1 text;
   tbls text[] := array['teams','team_members','players','player_guardians','events','attendance','guardian_invitations','team_owner_transfers'];
 begin
   -- ---------- catalog checks (as the CLI role)
@@ -36,10 +36,47 @@ begin
   select string_agg(r.relname || '.' || a.attname || '=' || c.confdeltype::text, ' ' order by r.relname, a.attname) into seen
     from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
     join pg_class r on r.oid = c.conrelid
-   where c.contype = 'f' and c.confrelid = 'auth.users'::regclass and c.connamespace in ('public'::regnamespace, 'private'::regnamespace);
+   where c.contype = 'f' and c.confrelid = 'auth.users'::regclass and c.connamespace in ('public'::regnamespace, 'private'::regnamespace)
+     and c.conrelid is distinct from to_regclass('private.rate_events')    -- Phase 5-B U1, checked separately below
+     and not (c.conrelid = 'public.players'::regclass and a.attname = 'self_user_id')   -- Phase 5-B D3.5, below
+     and c.conrelid is distinct from to_regclass('private.team_member_blocks');          -- Phase 5-B U4, below
   if seen <> 'account_deletions.user_id=c attendance.updated_by=n events.created_by=n events.deleted_by=n events.updated_by=n guardian_invitations.created_by=c guardian_invitations.used_by=n player_guardians.user_id=c players.archived_by=n players.created_by=a players.updated_by=n team_members.user_id=c team_owner_transfers.from_user=c team_owner_transfers.to_user=c teams.created_by=a' then
     bad := bad + 1; out := out || E'\n[schema] ★ foreign keys differ from the design';
   else out := out || E'\n[schema] foreign keys to auth.users match the design (15 incl. new tables)'; end if;
+  -- Phase 5-B U1 (owner quota) may or may not be applied: both are normal. When applied, its
+  -- table must have exactly one FK to auth.users: user_id, NOT NULL, ON DELETE CASCADE.
+  if to_regclass('private.rate_events') is null then
+    out := out || E'\n[schema] U1 owner quota: not applied (ok)';
+  else
+    select string_agg(a.attname || '=' || c.confdeltype::text || '/' || case when a.attnotnull then 'notnull' else 'null' end, ' ' order by a.attname) into u1
+      from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
+     where c.contype = 'f' and c.confrelid = 'auth.users'::regclass and c.conrelid = 'private.rate_events'::regclass;
+    if u1 is distinct from 'user_id=c/notnull' then
+      bad := bad + 1; out := out || E'\n[schema] ★ U1 rate_events foreign key differs from the design';
+    else out := out || E'\n[schema] U1 owner quota: applied, rate_events.user_id -> auth.users ON DELETE CASCADE (ok)'; end if;
+  end if;
+  -- Phase 5-B D3.5 (self registration) may or may not be applied: both are normal. When applied,
+  -- players.self_user_id must reference auth.users with ON DELETE CASCADE and be nullable.
+  select string_agg(a.attname || '=' || c.confdeltype::text || '/' || case when a.attnotnull then 'notnull' else 'null' end, ' ') into u1
+    from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
+   where c.contype = 'f' and c.confrelid = 'auth.users'::regclass and c.conrelid = 'public.players'::regclass and a.attname = 'self_user_id';
+  if not exists (select 1 from pg_attribute where attrelid = 'public.players'::regclass and attname = 'self_user_id' and not attisdropped) then
+    out := out || E'\n[schema] D3.5 self registration: not applied (ok)';
+  elsif u1 is distinct from 'self_user_id=c/null' then
+    bad := bad + 1; out := out || E'\n[schema] ★ D3.5 players.self_user_id foreign key differs from the design';
+  else out := out || E'\n[schema] D3.5 self registration: applied, players.self_user_id -> auth.users ON DELETE CASCADE (ok)'; end if;
+  -- Phase 5-B U4 (block list) may or may not be applied: both are normal. When applied, its table
+  -- must have exactly one FK to auth.users: user_id, NOT NULL, ON DELETE CASCADE.
+  if to_regclass('private.team_member_blocks') is null then
+    out := out || E'\n[schema] U4 member removal: not applied (ok)';
+  else
+    select string_agg(a.attname || '=' || c.confdeltype::text || '/' || case when a.attnotnull then 'notnull' else 'null' end, ' ' order by a.attname) into u1
+      from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
+     where c.contype = 'f' and c.confrelid = 'auth.users'::regclass and c.conrelid = 'private.team_member_blocks'::regclass;
+    if u1 is distinct from 'user_id=c/notnull' then
+      bad := bad + 1; out := out || E'\n[schema] ★ U4 team_member_blocks foreign key differs from the design';
+    else out := out || E'\n[schema] U4 member removal: applied, team_member_blocks.user_id -> auth.users ON DELETE CASCADE (ok)'; end if;
+  end if;
 
   -- ---------- pick existing accounts and their latest existing sessions (ids stay inside)
   select m.team_id, m.user_id into team, o from public.team_members m where m.role = 'owner' limit 1;
@@ -82,7 +119,13 @@ begin
   perform public.set_attendance(ev, kid, 'undecided', null);
   v := public.account_deletion_preview();
   perform public.my_owner_transfers();
-  perform public.get_team_by_share_token(share);
+  -- The old share-token read is closed from D5 on (EXECUTE revoked); then the member's bookmark read is checked.
+  if has_function_privilege('authenticated', 'public.get_team_by_share_token(text)', 'execute') then
+    perform public.get_team_by_share_token(share);
+  else
+    perform public.resolve_legacy_team(share);
+    out := out || E'\n[guardian] old share-token path: closed (D5); member bookmark lookup: OK';
+  end if;
   newkid := (public.register_player(team, '検証用 こども', null, true) ->> 'player_id')::uuid;
   perform public.update_player(newkid, '検証用 こども2', '1年', true);
   perform public.create_guardian_invitation(newkid);

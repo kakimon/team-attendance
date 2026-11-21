@@ -16,7 +16,8 @@ export default defineNuxtConfig({
   devtools: { enabled: false },
   css: ['~/assets/css/main.css'],
   components: [{ path: '~/components', pathPrefix: false }],
-  vite: { plugins: [tailwindcss()] },
+  // driver.js (guide tour) is imported only when a tour runs; pre-bundled so the dev server does not reload mid-tour.
+  vite: { plugins: [tailwindcss()], optimizeDeps: { include: ['driver.js'] } },
   app: {
     head: {
       htmlAttrs: { lang: 'ja' },
@@ -73,7 +74,8 @@ export default defineNuxtConfig({
       ignore: ['/auth/callback'],
       // Relay page for shared links: must exist as a real file (HTTP 200 on GitHub Pages).
       // Legal / contact pages (when present): readable without login, real files so direct access works.
-      routes: ['/j'], // + legal pages that exist (added in the 'prerender:routes' hook below)
+      // Help page: public, real file so a shared link returns 200.
+      routes: ['/j', '/help'], // + legal pages that exist (added in the 'prerender:routes' hook below)
     },
   },
 })

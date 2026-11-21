@@ -179,7 +179,7 @@ const minutes = computed(() => Math.max(1, Math.ceil(secondsLeft.value / 60)))
               <li v-for="c in pv.children_to_delete" :key="c.player_id" class="flex gap-2">
                 <span class="text-error">●</span>
                 <span>「<b>{{ c.name }}</b>」（{{ c.team_name }}）と出欠 {{ c.answers }} 件<br>
-                  <span class="text-xs text-base-content/60">保護者があなただけのため</span></span>
+                  <span class="text-xs text-base-content/60">あなた本人の登録か、出欠を回答できるのがあなただけのため</span></span>
               </li>
               <li v-for="t in pv.teams_to_close" :key="t.team_id" class="flex gap-2">
                 <span class="text-error">●</span>
@@ -187,6 +187,7 @@ const minutes = computed(() => Math.max(1, Math.ceil(secondsLeft.value / 60)))
                   <span class="text-xs text-base-content/60">メンバーがあなただけのため、チームを終了します</span></span>
               </li>
             </ul>
+            <p class="mt-3 text-xs text-base-content/55">本人として登録したあなた自身の登録（自分を登録）は、代わりに回答できる家族などがいても削除されます。</p>
           </AppCard>
 
           <AppCard v-if="pv.children_kept_by_family.length || pv.teams_to_leave.length" title="残るもの" :icon="CircleCheck">
@@ -194,11 +195,11 @@ const minutes = computed(() => Math.max(1, Math.ceil(secondsLeft.value / 60)))
               <li v-for="c in pv.children_kept_by_family" :key="c.player_id" class="flex gap-2">
                 <span class="text-success">●</span>
                 <span>「<b>{{ c.name }}</b>」（{{ c.team_name }}）と出欠<br>
-                  <span class="text-xs text-base-content/60">ほかの保護者がいるため残ります。あなたは保護者から外れます。</span></span>
+                  <span class="text-xs text-base-content/60">ほかにも回答できる人（家族など）がいるため残ります。あなたは回答できる人から外れます。</span></span>
               </li>
               <li v-for="t in pv.teams_to_leave" :key="t.team_id" class="flex gap-2">
                 <span class="text-success">●</span>
-                <span>チーム「<b>{{ t.team_name }}</b>」の予定と、ほかの家庭の出欠<br>
+                <span>チーム「<b>{{ t.team_name }}</b>」の予定と、ほかのメンバーの出欠<br>
                   <span class="text-xs text-base-content/60">あなたはチームから抜けます</span></span>
               </li>
             </ul>

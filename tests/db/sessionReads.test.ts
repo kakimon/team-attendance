@@ -1,7 +1,7 @@
 // Reads (RLS SELECT + data-returning RPCs) require a live login session (20261113100000).
 // A token whose session was logged out / deleted reads nothing, even before it expires.
 import { describe, expect, it } from 'vitest'
-import { addUser, asUser, createDb, type Db } from './setup'
+import { addUser, asUser, createDb, type Db, joinTeamAs } from './setup'
 
 const U = (n: number) => `90000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const O = U(1), P = U(2), P2 = U(3)
@@ -13,7 +13,7 @@ async function scenario() {
   const db = await createDb()
   for (const u of [O, P, P2]) await addUser(db, u)
   const [t] = await q(db, O, `select id, share_token from public.create_team('チーム', '代表')`)
-  for (const u of [P, P2]) await q(db, u, `select public.join_team($1, 'm')`, [t.share_token])
+  for (const u of [P, P2]) await joinTeamAs(db, u, t.share_token, 'm')
   const [{ id: ev }] = await q(db, O, `select public.create_event($1, '練習', now() + interval '1 day') as id`, [t.id])
   const kid = (await q(db, P, `select public.register_player($1, 'こども', null, true) as r`, [t.id]))[0].r.player_id
   await q(db, P, `select public.set_attendance($1, $2, 'attend')`, [ev, kid])
@@ -28,7 +28,8 @@ const visible = async (db: Db, session: string | null) => {
   return out
 }
 const READ_RPCS = (s: Awaited<ReturnType<typeof scenario>>) => [
-  ['select public.get_team_by_share_token($1)', [s.t.share_token]],
+  // D5: the old share-token read is closed; members read by it only through resolve_legacy_team (bookmarks)
+  ['select public.resolve_legacy_team($1)', [s.t.share_token]],
   [`select public.find_similar_players($1, 'こども')`, [s.t.id]],
   ['select public.event_attendance_summary($1)', [s.ev]],
   ['select public.account_deletion_preview()', []],

@@ -1,11 +1,13 @@
 <script setup lang="ts">
 // 出欠一覧: per-event view (phones) and table view; visible to all team members.
-import { CalendarDays, LayoutList, PenLine, Table, UserPlus } from 'lucide-vue-next'
+import { CalendarDays, LayoutList, PenLine, Table } from 'lucide-vue-next'
 import type { TeamSnapshot } from '~/utils/types'
 
 const route = useRoute()
 const token = computed(() => String(route.params.token))
-const view = ref<'event' | 'table'>('event')
+// ?view=table opens the 一覧表 directly (used by the checklist link).
+const view = ref<'event' | 'table'>(route.query.view === 'table' ? 'table' : 'event')
+watch(() => route.query.view, (v) => { if (v === 'table') view.value = 'table' }) // link from the same page
 const selected = ref<string | null>(null)
 const current = (s: TeamSnapshot) => s.events.find((e) => e.id === selected.value) ?? s.events[0]
 const ordered = (s: TeamSnapshot) =>
@@ -14,13 +16,7 @@ const ordered = (s: TeamSnapshot) =>
 
 <template>
   <TeamShell v-slot="{ snap }" title="出欠一覧">
-    <AppCard v-if="!snap.myPlayerIds.length" tight>
-      <div class="flex items-center gap-3">
-        <span class="grid size-10 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary"><UserPlus class="size-5" /></span>
-        <p class="flex-1 text-sm">まずはお子さんを登録しましょう</p>
-        <NuxtLink :to="`/t/${token}/children/new`" class="btn btn-brand btn-sm">登録</NuxtLink>
-      </div>
-    </AppCard>
+    <OnboardingPanel :snap="snap" :token="token" />
 
     <EmptyState v-if="!snap.events.length" :icon="CalendarDays" title="予定はまだありません"
       text="管理者が予定を追加すると、ここに表示されます。" />
@@ -36,7 +32,7 @@ const ordered = (s: TeamSnapshot) =>
 
       <!-- Per event -->
       <template v-if="view === 'event'">
-        <div class="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:px-0" role="tablist" aria-label="予定を選択">
+        <div data-guide="event-strip" class="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:px-0" role="tablist" aria-label="予定を選択">
           <button v-for="e in snap.events" :key="e.id" role="tab" :aria-selected="current(snap)?.id === e.id"
             class="flex shrink-0 flex-col items-start rounded-2xl px-3.5 py-2 text-left transition"
             :class="current(snap)?.id === e.id ? 'bg-brand text-white shadow-soft' : 'bg-base-100 text-base-content shadow-soft'"
@@ -52,14 +48,14 @@ const ordered = (s: TeamSnapshot) =>
         </AppCard>
 
         <AppCard v-if="current(snap)" title="メンバーの出欠" tight>
-          <p v-if="!snap.players.length" class="py-4 text-center text-sm text-base-content/55">まだ子どもが登録されていません。</p>
+          <p v-if="!snap.players.length" class="py-4 text-center text-sm text-base-content/55">まだ回答する人が登録されていません。</p>
           <ul class="divide-y divide-base-200">
             <li v-for="p in ordered(snap)" :key="p.id" class="flex items-center gap-3 py-3">
               <TeamAvatar :name="p.name" size="sm" soft />
               <div class="min-w-0 flex-1">
-                <p class="flex items-center gap-1.5 truncate font-bold">
-                  {{ p.name }}
-                  <span v-if="snap.myPlayerIds.includes(p.id)" class="badge badge-primary badge-xs">うちの子</span>
+                <p class="flex min-w-0 items-center gap-1.5 font-bold">
+                  <span class="truncate">{{ p.name }}</span>
+                  <ParticipantBadge :snap="snap" :player="p" />
                 </p>
                 <p class="truncate text-xs text-base-content/55">
                   {{ p.note }}<template v-if="statusOf(snap, current(snap)!.id, p.id).comment">　「{{ statusOf(snap, current(snap)!.id, p.id).comment }}」</template>
@@ -72,7 +68,9 @@ const ordered = (s: TeamSnapshot) =>
       </template>
 
       <!-- Table -->
-      <AppCard v-else tight>
+      <AppCard v-else tight data-guide="attendance-table">
+        <!-- The table is on screen with at least one event: the admin has seen the attendance. -->
+        <GuideMark :snap="snap" flag="viewedTable" />
         <div class="-mx-4 overflow-x-auto">
           <table class="table table-pin-cols table-sm">
             <thead>
@@ -88,7 +86,7 @@ const ordered = (s: TeamSnapshot) =>
               <tr v-for="p in ordered(snap)" :key="p.id">
                 <th class="bg-base-100 whitespace-nowrap">
                   {{ p.name }}
-                  <span v-if="snap.myPlayerIds.includes(p.id)" class="badge badge-primary badge-xs ml-1">うちの子</span>
+                  <ParticipantBadge :snap="snap" :player="p" class="ml-1" />
                 </th>
                 <td v-for="e in snap.events" :key="e.id" class="text-center">
                   <StatusMark :status="statusOf(snap, e.id, p.id).status" />
@@ -107,7 +105,7 @@ const ordered = (s: TeamSnapshot) =>
       </AppCard>
 
       <NuxtLink v-if="snap.myPlayerIds.length" :to="`/t/${token}/answer`" class="btn btn-brand btn-lg w-full">
-        <PenLine class="size-5" />うちの子の出欠を入力する
+        <PenLine class="size-5" />出欠を入力する
       </NuxtLink>
     </template>
   </TeamShell>

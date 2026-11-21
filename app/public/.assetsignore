@@ -1,0 +1,3 @@
+# Files in .output/public that Cloudflare must not serve (GitHub Pages only / this list itself).
+.nojekyll
+.assetsignore

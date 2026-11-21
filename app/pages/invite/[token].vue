@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 家族招待の受け取り（24時間・1回限り。サーバー側で検証）
-// すでに保護者の場合は正常な案内（招待は消費されない）。
+// すでに回答できる場合は正常な案内（招待は消費されない）。
 import { BadgeCheck, CircleCheck, PenLine, ShieldCheck, UserPlus } from 'lucide-vue-next'
 import type { AcceptResult } from '~/utils/types'
 
@@ -33,9 +33,9 @@ async function accept() {
       <AppCard v-if="result?.status === 'accepted'">
         <div class="flex flex-col items-center gap-3 text-center">
           <span class="grid size-14 place-items-center rounded-2xl bg-success/12 text-success"><CircleCheck class="size-8" /></span>
-          <p class="text-lg font-bold">保護者として追加されました</p>
+          <p class="text-lg font-bold">回答できる人として追加されました</p>
           <p class="text-sm text-base-content/60">{{ result.player_name }} さんの出欠を入力できます。</p>
-          <NuxtLink :to="`/t/${result.share_token}/answer`" class="btn btn-brand btn-lg mt-2 w-full"><PenLine class="size-5" />出欠入力へ</NuxtLink>
+          <NuxtLink :to="`/t/${result.team_id}/answer`" class="btn btn-brand btn-lg mt-2 w-full"><PenLine class="size-5" />出欠入力へ</NuxtLink>
         </div>
       </AppCard>
 
@@ -45,9 +45,9 @@ async function accept() {
           <span class="grid size-14 place-items-center rounded-2xl bg-info/12 text-info"><BadgeCheck class="size-8" /></span>
           <p class="text-lg font-bold">すでに登録済みです</p>
           <p class="text-sm text-base-content/65">
-            あなたは {{ result.player_name }} さんの保護者として登録されています。<br>このまま出欠を入力できます。
+            あなたは {{ result.player_name }} さんの出欠を回答できるように登録されています。<br>このまま出欠を入力できます。
           </p>
-          <NuxtLink :to="`/t/${result.share_token}/answer`" class="btn btn-brand btn-lg mt-2 w-full"><PenLine class="size-5" />出欠入力へ</NuxtLink>
+          <NuxtLink :to="`/t/${result.team_id}/answer`" class="btn btn-brand btn-lg mt-2 w-full"><PenLine class="size-5" />出欠入力へ</NuxtLink>
           <p class="text-xs text-base-content/55">この招待リンクは使われていません。ほかの家族に送る場合は、そのまま使えます。</p>
         </div>
       </AppCard>
@@ -56,11 +56,11 @@ async function accept() {
         <AppCard>
           <div class="flex flex-col items-center gap-2 text-center">
             <span class="grid size-14 place-items-center rounded-2xl bg-primary/10 text-primary"><UserPlus class="size-7" /></span>
-            <p class="text-lg font-bold">お子さんの保護者に追加されます</p>
-            <p class="text-sm text-base-content/60">受け取ると、あなたのアカウントでもお子さんの出欠を入力できるようになります。</p>
+            <p class="text-lg font-bold">一緒に回答する人として追加されます</p>
+            <p class="text-sm text-base-content/60">受け取ると、あなたのアカウントでも、招待した人が登録した人（お子さんなど）の出欠を入力できるようになります。</p>
           </div>
           <form class="mt-5 space-y-4" @submit.prevent="accept">
-            <FormField label="チーム内で表示する名前" hint="例：田中（ゆうとの母）">
+            <FormField label="チーム内で表示する名前" hint="例：田中 花子、田中（ゆうとの母）">
               <input v-model="displayName" required maxlength="40" class="input input-lg w-full" placeholder="表示名">
             </FormField>
             <p v-if="error" role="alert" class="rounded-xl bg-error/10 p-3 text-sm text-error">{{ error }}</p>

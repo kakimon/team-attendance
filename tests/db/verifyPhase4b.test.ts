@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { addUser, asUser, createDb } from './setup'
+import { addUser, asUser, createDb, joinTeamAs } from './setup'
 
 it('Phase 4-B cloud check passes and rolls everything back', async () => {
   const db = await createDb()
@@ -11,7 +11,7 @@ it('Phase 4-B cloud check passes and rolls everything back', async () => {
   for (const u of [O, G, M]) await addUser(db, u)
   const q = (u: string, sql: string, p: unknown[] = []) => asUser(db, u, async () => (await db.query<any>(sql, p)).rows)
   const [t] = await q(O, `select id, share_token from public.create_team('どこかのチーム', 'O')`)
-  for (const u of [G, M]) await q(u, `select public.join_team($1, 'm')`, [t.share_token])
+  for (const u of [G, M]) await joinTeamAs(db, u, t.share_token, 'm')
   const [{ id: ev }] = await q(O, `select public.create_event($1, '練習', now() + interval '1 day') as id`, [t.id])
   const kid = (await q(G, `select public.register_player($1, 'こども', null, true) as r`, [t.id]))[0].r.player_id
   await q(G, `select public.set_attendance($1, $2, 'attend')`, [ev, kid])

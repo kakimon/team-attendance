@@ -14,3 +14,22 @@ logs
 supabase/.env
 supabase/.temp
 supabase/.branches
+
+# Production data from scripts/ops must never enter a repository (backups, checksums, restore SQL, usage reports).
+# Keep them in ~/my_app/team-attendance-backups/ (outside every repository). scripts/export-public.sh also scans for them.
+team-attendance-backups/
+*backup*/
+tables*.json
+*.sha256
+usage*.txt
+usage*.log
+r-*.sql
+restore-*.sql
+*-plan.sql
+*-commit.sql
+plan.sql
+commit.sql
+
+# Cloudflare wrangler local state and local-only variables
+.wrangler/
+.dev.vars*

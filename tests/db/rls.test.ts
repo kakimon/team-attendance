@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { addUser, asUser, createDb, type Db } from './setup'
+import { addUser, asUser, createDb, type Db, joinTeamAs } from './setup'
 
 // Users
 const OWNER = '00000000-0000-0000-0000-00000000000a' // creates team A
@@ -29,8 +29,8 @@ beforeAll(async () => {
 
   ;[teamA] = await rpc(OWNER, `select id, share_token from public.create_team('Aチーム', '監督')`)
   ;[teamB] = await rpc(OUT, `select id, share_token from public.create_team('Bチーム', '別監督')`)
-  await rpc(P1, `select public.join_team($1, '太郎の父')`, [teamA.share_token])
-  await rpc(P2, `select public.join_team($1, '花子の母')`, [teamA.share_token])
+  await joinTeamAs(db, P1, teamA.share_token, '太郎の父')
+  await joinTeamAs(db, P2, teamA.share_token, '花子の母')
 
   const [r1] = await rpc(P1, `select public.register_player($1, '山田 太郎', '4年') as r`, [teamA.id])
   taro = r1.r.player_id
@@ -229,7 +229,7 @@ describe('7. unanswered is distinct from absent', () => {
 
 describe('9. admin rights cannot be self-declared', () => {
   it('joining via team URL gives member, re-joining never changes role', async () => {
-    await rpc(P2, `select public.join_team($1, '花子の母')`, [teamA.share_token])
+    await joinTeamAs(db, P2, teamA.share_token, '花子の母')
     const [m] = await rpc(P2, `select role from public.team_members where user_id = $1`, [P2])
     expect(m.role).toBe('member')
   })

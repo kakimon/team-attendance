@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CircleUserRound, FileText, House, LogOut, Mail, ShieldCheck } from 'lucide-vue-next'
+import { CircleHelp, CircleUserRound, FileText, House, LogOut, Mail, ShieldCheck } from 'lucide-vue-next'
 const { user, signOut } = useAuth()
 const links = useLegalLinks()
 const ICON = { terms: FileText, privacy: ShieldCheck, contact: Mail }
@@ -18,6 +18,7 @@ async function logout() {
       <li class="menu-title truncate">{{ user.name || user.email }}</li>
       <li><NuxtLink to="/"><House class="size-4" />チーム一覧</NuxtLink></li>
       <li><NuxtLink to="/account"><CircleUserRound class="size-4" />アカウント</NuxtLink></li>
+      <li><NuxtLink to="/help"><CircleHelp class="size-4" />使い方</NuxtLink></li>
       <li v-for="l in links" :key="l.to"><NuxtLink :to="l.to"><component :is="ICON[l.icon]" class="size-4" />{{ l.label }}</NuxtLink></li>
       <li v-if="!links.length"><a :href="CONTACT_FORM_URL" target="_blank" rel="noopener noreferrer"><Mail class="size-4" />お問い合わせ</a></li>
       <li><button @click="logout"><LogOut class="size-4" />ログアウト</button></li>

@@ -1,6 +1,8 @@
 <script setup lang="ts">
-// 管理: share URL, create events, totals. Server re-checks admin role on every write.
-import { CalendarDays, CalendarPlus, ChartColumn, Link, Lock, PenLine } from 'lucide-vue-next'
+// 管理: join link (参加用URL), create events, totals, members (owner: remove / block list / hand-over),
+// deleting the team (owner). Server re-checks the role on every write.
+import { CalendarDays, CalendarPlus, ChartColumn, Lock, LogOut, PenLine } from 'lucide-vue-next'
+import { updateTeamGuide } from '~/utils/guideStore'
 import type { TeamSnapshot } from '~/utils/types'
 
 const repo = useRepo()
@@ -9,8 +11,6 @@ const error = ref('')
 const done = ref(false)
 const busy = ref(false)
 
-const teamUrl = (s: TeamSnapshot) =>
-  import.meta.client ? shareUrl('team', s.team.share_token, location.origin, useRuntimeConfig().app.baseURL) : ''
 async function create(s: TeamSnapshot, reload: () => Promise<void>) {
   if (!form.title || !form.date) return
   busy.value = true
@@ -32,6 +32,12 @@ async function create(s: TeamSnapshot, reload: () => Promise<void>) {
     busy.value = false
   }
 }
+
+/** Checklist convenience (this device): the team link was copied or shared. */
+const { user } = useAuth()
+function markShared(s: TeamSnapshot) {
+  if (user.value) updateTeamGuide(user.value.id, s.team.id, 'admin', { sharedLink: true })
+}
 </script>
 
 <template>
@@ -39,12 +45,9 @@ async function create(s: TeamSnapshot, reload: () => Promise<void>) {
     <EmptyState v-if="!isAdminRole(snap)" :icon="Lock" tone="error" title="管理者のみ利用できます" />
 
     <template v-else>
-      <AppCard title="チームの共有URL" :icon="Link">
-        <p class="mb-3 text-sm text-base-content/65">LINEグループなどに貼ってください。開いた人はメンバーとして参加します。</p>
-        <CopyField :value="teamUrl(snap)" :share-title="snap.team.name" />
-      </AppCard>
+      <JoinLinkCard :snap="snap" @shared="markShared(snap)" />
 
-      <AppCard title="予定を追加" :icon="CalendarPlus">
+      <AppCard title="予定を追加" :icon="CalendarPlus" data-guide="event-add">
         <form class="space-y-4" @submit.prevent="create(snap, reload)">
           <FormField label="タイトル">
             <input v-model="form.title" required maxlength="60" class="input w-full" placeholder="例：定例練習、発表会リハーサル">
@@ -61,13 +64,13 @@ async function create(s: TeamSnapshot, reload: () => Promise<void>) {
         </form>
       </AppCard>
 
-      <AppCard title="予定と出欠集計" :icon="ChartColumn">
+      <AppCard title="予定と出欠集計" :icon="ChartColumn" data-guide="admin-summary">
         <EmptyState v-if="!snap.events.length" :icon="CalendarDays" title="予定はまだありません" class="shadow-none" />
         <ul class="space-y-5">
           <li v-for="e in snap.events" :key="e.id" class="space-y-3">
             <div class="flex items-start gap-2">
               <div class="min-w-0 flex-1"><EventInfo :e="e" /></div>
-              <NuxtLink :to="`/t/${snap.team.share_token}/events/${e.id}`" class="btn btn-sm border-base-300 bg-base-100" :aria-label="`${e.title}を編集`">
+              <NuxtLink :to="`/t/${snap.team.id}/events/${e.id}`" class="btn btn-sm border-base-300 bg-base-100" :aria-label="`${e.title}を編集`">
                 <PenLine class="size-4" />編集
               </NuxtLink>
             </div>
@@ -75,6 +78,10 @@ async function create(s: TeamSnapshot, reload: () => Promise<void>) {
           </li>
         </ul>
       </AppCard>
+
+      <MemberManagement :snap="snap" :reload="reload" />
+      <TeamDeleteCard v-if="snap.me.role === 'owner'" :snap="snap" />
+      <NuxtLink v-else :to="`/t/${snap.team.id}/leave`" class="btn btn-ghost min-h-11 w-full text-error"><LogOut class="size-4" />このチームから脱退する</NuxtLink>
     </template>
   </TeamShell>
 </template>

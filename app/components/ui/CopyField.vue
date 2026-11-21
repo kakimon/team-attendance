@@ -2,6 +2,7 @@
 // Read-only URL with copy button (+ OS share sheet when the device supports it).
 import { Check, Copy, Share2 } from 'lucide-vue-next'
 const props = defineProps<{ value: string; shareTitle?: string; copyLabel?: string; noShare?: boolean }>()
+const emit = defineEmits<{ copied: []; shared: [] }>()
 const copied = ref(false)
 const canShare = ref(false)
 onMounted(() => (canShare.value = !props.noShare && typeof navigator.share === 'function'))
@@ -9,11 +10,12 @@ async function copy() {
   try {
     await navigator.clipboard.writeText(props.value)
     copied.value = true
+    emit('copied')
     setTimeout(() => (copied.value = false), 2000)
   } catch { /* clipboard blocked: user can select the text */ }
 }
 async function share() {
-  try { await navigator.share({ title: props.shareTitle, url: props.value }) } catch { /* cancelled */ }
+  try { await navigator.share({ title: props.shareTitle, url: props.value }); emit('shared') } catch { /* cancelled */ }
 }
 </script>
 

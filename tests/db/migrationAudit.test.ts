@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { addUser, applyMigration, asUser, createDb, type Db } from './setup'
+import { addUser, applyMigration, asUser, createDb, type Db, joinTeamAs } from './setup'
 
 // Phase 4-B adds two migrations, applied in this order (and rolled back in reverse).
 const MIG = '20261113000000_account_deletion.sql'
@@ -20,7 +20,7 @@ async function seeded() {
   const db = await createDb({ before: MIG })
   for (let i = 1; i <= 5; i++) await addUser(db, U(i))
   const [t] = await q(db, U(1), `select id, share_token from public.create_team('既存チーム', '代表')`)
-  for (const i of [2, 3, 4]) await q(db, U(i), `select public.join_team($1, 'm')`, [t.share_token])
+  for (const i of [2, 3, 4]) await joinTeamAs(db, U(i), t.share_token, 'm')
   await q(db, U(1), `select public.set_member_role($1, $2, 'admin')`, [t.id, U(2)])
   const [{ id: e1 }] = await q(db, U(1), `select public.create_event($1, '練習', now() + interval '1 day') as id`, [t.id])
   const [{ id: e2 }] = await q(db, U(2), `select public.create_event($1, '試合', now() + interval '2 day') as id`, [t.id])

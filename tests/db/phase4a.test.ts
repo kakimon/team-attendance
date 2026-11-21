@@ -1,7 +1,7 @@
 // Phase 4-A: event edit / logical delete, child edit / cancel, "already a guardian" invitations.
 // Every operation is checked for both the allowed and the refused case, and that history stays in the DB.
 import { beforeAll, describe, expect, it } from 'vitest'
-import { addUser, asUser, createDb, type Db } from './setup'
+import { addUser, asUser, createDb, type Db, joinTeamAs } from './setup'
 
 const OWNER = '40000000-0000-0000-0000-00000000000a' // team A owner (no child)
 const ADMIN = '40000000-0000-0000-0000-0000000000ad' // promoted admin (no child)
@@ -29,7 +29,7 @@ beforeAll(async () => {
   for (const u of [OWNER, ADMIN, DAD, MOM, OTHER, OUT, NEW]) await addUser(db, u)
   ;[teamA] = await q(OWNER, `select id, share_token from public.create_team('Aクラブ', '代表')`)
   ;[teamB] = await q(OUT, `select id, share_token from public.create_team('Bクラブ', '別代表')`)
-  for (const u of [ADMIN, DAD, MOM, OTHER]) await q(u, `select public.join_team($1, 'x')`, [teamA.share_token])
+  for (const u of [ADMIN, DAD, MOM, OTHER]) await joinTeamAs(db, u, teamA.share_token, 'x')
   await q(OWNER, `select public.set_member_role($1, $2, 'admin')`, [teamA.id, ADMIN])
   ;[{ id: ev }] = await q(OWNER, `select public.create_event($1, '練習', '2030-01-10T09:00:00Z', '公民館') as id`, [teamA.id])
   ;[{ id: evB }] = await q(OUT, `select public.create_event($1, 'B練習', '2030-01-10T09:00:00Z') as id`, [teamB.id])

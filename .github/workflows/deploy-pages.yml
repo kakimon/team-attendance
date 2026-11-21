@@ -1,12 +1,16 @@
-# Build the static SPA and deploy it to GitHub Pages.
-# Required repository variables (Settings > Secrets and variables > Actions > Variables):
-#   SUPABASE_URL              e.g. https://<ref>.supabase.co
-#   SUPABASE_PUBLISHABLE_KEY  sb_publishable_... (public by design; never the secret/service_role key)
-name: Deploy GitHub Pages
+# OLD address (GitHub Pages): publishes ONLY the notice page that points to the new address, and ONLY by hand.
+# The app itself is no longer built or deployed here (it moved to Cloudflare Workers; see the internal publishing plan).
+# There is deliberately no `push` trigger: syncing / pushing the public repository never changes what GitHub Pages serves,
+# so the currently published old app stays as it is until this workflow is run on the switch-over day.
+#   Actions > "GitHub Pages: notice page (manual)" > Run workflow > new_url = https://<new address>
+name: 'GitHub Pages: notice page (manual)'
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      new_url:
+        description: 'New address of the app (https://..., no query). Required: the page is never built with a placeholder.'
+        required: true
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -15,7 +19,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,35 +27,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-      - run: npm ci
-      - run: npm test
-      - run: npm run typecheck
-      - name: Check required variables
-        run: |
-          test -n "$SUPABASE_URL" || { echo "::error::vars.SUPABASE_URL is not set"; exit 1; }
-          test -n "$SUPABASE_PUBLISHABLE_KEY" || { echo "::error::vars.SUPABASE_PUBLISHABLE_KEY is not set"; exit 1; }
-          case "$SUPABASE_PUBLISHABLE_KEY" in sb_secret_*|*service_role*) echo "::error::Use the publishable key, not a secret key"; exit 1;; esac
+      - name: Build the notice page (refuses a placeholder or a non-https URL)
+        run: node pages-notice/build.mjs "$NEW_URL" _site
         env:
-          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          NEW_URL: ${{ inputs.new_url }}
+      - name: Check the page (no placeholder, no app bundle)
+        run: |
+          ! grep -l "__NEW_URL__" _site/index.html _site/404.html
+          test ! -d _site/_nuxt
+          test -f _site/index.html && test -f _site/404.html && test -f _site/.nojekyll
+          test "$(find _site -type f | wc -l)" -eq 3
       - name: Configure Pages
-        id: pages
         uses: actions/configure-pages@v5
-      - name: Generate static application
-        run: npm run generate
-        env:
-          NUXT_PUBLIC_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          NUXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
-          NUXT_APP_BASE_URL: ${{ steps.pages.outputs.base_path }}/
-      - name: Check bundle (no demo code, SPA fallback present)
-        run: |
-          ! grep -rl "createMockRepo\|u-tanaka" .output/public
-          test -f .output/public/404.html
-          test -f .output/public/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .output/public
+          path: _site
   deploy:
     needs: build
     runs-on: ubuntu-latest

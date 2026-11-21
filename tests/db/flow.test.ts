@@ -19,6 +19,7 @@ const repos: Record<string, Repo> = {}
 const repo = (u: string) => repos[u]!
 let teamId: string
 let shareToken: string
+let joinToken: string   // the team's join link (D5: the only way to join)
 let eventId: string
 let kid: string
 
@@ -49,20 +50,24 @@ describe('team creation and shared URL', () => {
     eventId = s.events[0]!.id
   })
 
-  it('before joining, the URL reveals only the team name', async () => {
-    const p = await repo(DAD).teamPreview(shareToken)
-    expect(p).toEqual({ id: teamId, name: 'ひまわりジュニア', is_member: false, role: null })
+  it('before joining, the join link reveals only the team name', async () => {
+    joinToken = (await repo(COACH).getJoinLink(teamId)).token!
+    expect(await repo(DAD).previewJoin(joinToken)).toEqual({ team_id: teamId, name: 'ひまわりジュニア', is_member: false })
     expect(await repo(DAD).loadTeam(teamId)).toBeNull()
     expect(await repo(DAD).myTeams()).toEqual([])
   })
 
-  it('unknown token -> null', async () => {
-    expect(await repo(DAD).teamPreview('nope')).toBeNull()
+  it('unknown token -> null; the old share token tells a non-member nothing (D5)', async () => {
+    expect(await repo(DAD).previewJoin('nope'.repeat(10))).toBeNull()
+    expect(await repo(DAD).resolveLegacyTeam(shareToken)).toBeNull()
+    const old = await pgliteClient(db, DAD).rpc('get_team_by_share_token', { p_share_token: shareToken })
+    expect(old.error?.message).toMatch(/permission denied for function get_team_by_share_token/)
   })
 
-  it('joining via URL gives member role', async () => {
-    for (const u of [DAD, OTHER, STRANGER]) await repo(u).joinTeam(shareToken, 'x')
-    expect((await repo(DAD).teamPreview(shareToken))!.role).toBe('member')
+  it('joining via the join link gives member role', async () => {
+    for (const u of [DAD, OTHER, STRANGER]) expect(await repo(u).joinByToken(joinToken, 'x')).toEqual({ status: 'joined', team_id: teamId })
+    expect((await repo(DAD).loadTeam(teamId))!.me.role).toBe('member')
+    expect(await repo(DAD).resolveLegacyTeam(shareToken)).toBe(teamId)          // members' old bookmarks still move
   })
 })
 
@@ -130,8 +135,8 @@ describe('knowing the team URL does NOT give edit rights to other families', () 
   })
 
   it('re-joining never upgrades the role', async () => {
-    await repo(STRANGER).joinTeam(shareToken, 'again')
-    expect((await repo(STRANGER).teamPreview(shareToken))!.role).toBe('member')
+    expect(await repo(STRANGER).joinByToken(joinToken, 'again')).toEqual({ status: 'already_member', team_id: teamId })
+    expect((await repo(STRANGER).loadTeam(teamId))!.me.role).toBe('member')
   })
 })
 

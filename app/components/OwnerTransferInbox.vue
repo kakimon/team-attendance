@@ -44,7 +44,7 @@ async function respond(teamId: string, accept: boolean) {
         <b>{{ x.from_name || 'オーナー' }}</b>さんから、チーム「<b>{{ x.team_name }}</b>」のオーナーを引き継いでほしいという依頼が届いています。
       </p>
       <p class="mt-1 text-xs text-base-content/60">
-        引き受けると、あなたがオーナー（予定の管理やメンバーの権限を変更できる人）になり、{{ x.from_name || 'オーナー' }}さんは一般メンバーになります。{{ formatDate(x.expires_at) }}まで有効です。
+        引き受けると、あなたがオーナー（予定やメンバーを管理できる人）になり、{{ x.from_name || 'オーナー' }}さんは一般メンバーになります。{{ formatDate(x.expires_at) }}まで有効です。
       </p>
       <div class="mt-3 grid grid-cols-2 gap-2">
         <button class="btn" :disabled="!!busy" @click="respond(x.team_id, false)">断る</button>

@@ -67,13 +67,20 @@ const rpc = async (u, fn, args = {}) => {
   if (error) throw new Error(error.message)
   return data
 }
+// Joining: through the team's join link, read by an owner/admin (the old share-token path is closed from D5 on).
+const joinVia = async (manager, teamId, u, name) => {
+  const link = await rpc(manager, 'get_join_link', { p_team_id: teamId })
+  const r = await rpc(u, 'join_by_token', { p_token: link.token, p_display_name: name })
+  if (r?.status === 'invalid') throw new Error('join_link_invalid')
+  return r
+}
 const authExists = (id) => sql(`select count(*) from auth.users where id = '${id}'`) === '1'
 const ownersOf = (team) => sql(`select string_agg(user_id::text, ',') from public.team_members where team_id = '${team}' and role = 'owner'`)
 
 // ---------- scenario: owner A, members B and C; B's child shared with C; B's own child; A's child
 const A = await newUser('owner'), B = await newUser('parent-b'), C = await newUser('parent-c')
 const team = await rpc(A, 'create_team', { p_name: `E2E ${run}`, p_display_name: 'A' })
-for (const [u, n] of [[B, 'B'], [C, 'C']]) await rpc(u, 'join_team', { p_share_token: team.share_token, p_display_name: n })
+for (const [u, n] of [[B, 'B'], [C, 'C']]) await joinVia(A, team.id, u, n)
 const ev = await rpc(A, 'create_event', { p_team_id: team.id, p_title: '練習', p_starts_at: new Date(Date.now() + 864e5).toISOString() })
 const shared = (await rpc(B, 'register_player', { p_team_id: team.id, p_name: '共有 たろう', p_note: null, p_confirm_similar: true })).player_id
 const onlyB = (await rpc(B, 'register_player', { p_team_id: team.id, p_name: 'Bだけ じろう', p_note: null, p_confirm_similar: true })).player_id
@@ -209,7 +216,7 @@ let orphan = 0
 for (let i = 0; i < 6; i++) {
   const G1 = await newUser(`g1-${i}`), G2 = await newUser(`g2-${i}`), Own = await newUser(`o-${i}`)
   const t = await rpc(Own, 'create_team', { p_name: `shared ${run} ${i}`, p_display_name: 'O' })
-  for (const u of [G1, G2]) await rpc(u, 'join_team', { p_share_token: t.share_token, p_display_name: 'g' })
+  for (const u of [G1, G2]) await joinVia(Own, t.id, u, 'g')
   const kid = (await rpc(G1, 'register_player', { p_team_id: t.id, p_name: `共有 ${i}`, p_note: null, p_confirm_similar: true })).player_id
   const iv = await rpc(G1, 'create_guardian_invitation', { p_player_id: kid })
   await rpc(G2, 'accept_guardian_invitation', { p_token: iv.token, p_display_name: 'g' })
@@ -224,7 +231,7 @@ let bad = 0, deadlocks = 0
 for (let i = 0; i < 6; i++) {
   const G = await newUser(`inv-g-${i}`), N = await newUser(`inv-n-${i}`), Own = await newUser(`inv-o-${i}`)
   const t = await rpc(Own, 'create_team', { p_name: `inv ${run} ${i}`, p_display_name: 'O' })
-  await rpc(G, 'join_team', { p_share_token: t.share_token, p_display_name: 'g' })
+  await joinVia(Own, t.id, G, 'g')
   const kid = (await rpc(G, 'register_player', { p_team_id: t.id, p_name: `招待 ${i}`, p_note: null, p_confirm_similar: true })).player_id
   const iv = await rpc(G, 'create_guardian_invitation', { p_player_id: kid })
   const [del, acc] = await Promise.allSettled([invokeAs(G, { confirm: '退会する' }),
@@ -273,7 +280,7 @@ try {
   let msg = ''
   try { await rpc(D, 'create_team', { p_name: 'again', p_display_name: 'D' }) } catch (e) { msg = e.message }
   check('pending user cannot create a team', msg.includes('account_deletion_pending'), msg)
-  try { await rpc(D, 'join_team', { p_share_token: team.share_token, p_display_name: 'D' }); msg = '' } catch (e) { msg = e.message }
+  try { await joinVia(C, team.id, D, 'D'); msg = '' } catch (e) { msg = e.message }   // C owns the team by now
   check('pending user cannot join a team', msg.includes('account_deletion_pending'), msg)
   check('preview says deletion is pending', (await rpc(D, 'account_deletion_preview')).deletion_pending === true)
   r = await invokeAs(D, { confirm: '退会する' })
@@ -299,7 +306,7 @@ let oneOwner = true, rounds = 0
 for (let i = 0; i < 8; i++) {
   const F = await newUser(`own-${i}`), G = await newUser(`g-${i}`), H = await newUser(`h-${i}`)
   const t = await rpc(F, 'create_team', { p_name: `race ${run} ${i}`, p_display_name: 'F' })
-  for (const u of [G, H]) await rpc(u, 'join_team', { p_share_token: t.share_token, p_display_name: 'm' })
+  for (const u of [G, H]) await joinVia(F, t.id, u, 'm')
   await rpc(F, 'request_owner_transfer', { p_team_id: t.id, p_to_user: G.id })
   await Promise.allSettled([
     rpc(G, 'respond_owner_transfer', { p_team_id: t.id, p_accept: true }),
@@ -315,7 +322,7 @@ for (let i = 0; i < 8; i++) {
 check(`${rounds} racing rounds: every team has exactly one owner`, oneOwner)
 let raceErr = ''
 const Y = await newUser('y')
-await rpc(Y, 'join_team', { p_share_token: team.share_token, p_display_name: 'Y' })
+await joinVia(C, team.id, Y, 'Y')
 try {
   sql(`begin; update public.team_members set role = 'owner' where team_id = '${team.id}' and user_id = '${Y.id}'; commit;`)
 } catch (e) { raceErr = String(e.stderr ?? e.message) }

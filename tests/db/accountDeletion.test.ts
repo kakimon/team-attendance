@@ -2,7 +2,7 @@
 // The Edge Function steps are emulated: purge_account_data as service_role, then the Auth
 // user row is deleted (what auth.admin.deleteUser does in the database).
 import { describe, expect, it } from 'vitest'
-import { addUser, asUser, createDb, type Db } from './setup'
+import { addUser, asUser, createDb, type Db, joinTeamAs } from './setup'
 
 const U = (n: number) => `70000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const O = U(1), P1 = U(2), P2 = U(3), P3 = U(4), S = U(5), X = U(6)
@@ -50,7 +50,7 @@ async function scenario() {
   for (const u of [O, P1, P2, P3, S, X]) await addUser(db, u)
   const [t1] = await q(db, O, `select id, share_token from public.create_team('チームA', '代表')`)
   const [{ id: e1 }] = await q(db, O, `select public.create_event($1, '練習', now() + interval '1 day') as id`, [t1.id])
-  for (const [u, n] of [[P1, 'P1'], [P2, 'P2'], [P3, 'P3']]) await q(db, u, `select public.join_team($1, $2)`, [t1.share_token, n])
+  for (const [u, n] of [[P1, 'P1'], [P2, 'P2'], [P3, 'P3']]) await joinTeamAs(db, u, t1.share_token, n)
   const reg = async (u: string, team: string, name: string) =>
     (await q(db, u, `select public.register_player($1, $2, null, true) as r`, [team, name]))[0].r.player_id as string
   const k1 = await reg(P1, t1.id, '共有 たろう')
@@ -70,31 +70,78 @@ async function scenario() {
   return { db, t1, t2, e1, e2, k1, k2, k3, ks, pendingToken: pending.token as string }
 }
 
-describe('1. per-FK handling (not a blanket SET NULL)', () => {
-  it('matches the design table', async () => {
-    const db = await createDb()
-    const rows = (await db.query<{ k: string }>(`
+// Phase 5-B U1 adds one more FK (creation records go with the account). The table is checked
+// both without U1 (the state of the Tokyo DB until U1 is applied) and with it.
+const U1 = '20261117000000_owner_quota.sql'
+const D35 = '20261117230000_self_registration.sql'   // Phase 5-B D3.5 adds players.self_user_id
+const U4 = '20261117233000_member_removal.sql'      // Phase 5-B U4 adds the block list
+const FKS_PHASE4B = [
+  'attendance.updated_by:n:null',              // SET NULL
+  'events.created_by:n:null',
+  'events.deleted_by:n:null',
+  'events.updated_by:n:null',
+  'guardian_invitations.created_by:c:notnull', // CASCADE
+  'guardian_invitations.used_by:n:null',
+  'player_guardians.user_id:c:notnull',        // CASCADE (unchanged, guarded)
+  'players.archived_by:n:null',
+  'players.created_by:a:null',                 // NO ACTION kept (purge clears it)
+  'players.updated_by:n:null',
+  'private.account_deletions.user_id:c:notnull', // deletion state goes with the Auth user
+  'team_members.user_id:c:notnull',            // CASCADE (unchanged, guarded)
+  'team_owner_transfers.from_user:c:notnull',
+  'team_owner_transfers.to_user:c:notnull',
+  'teams.created_by:a:null',                   // NO ACTION kept (purge clears it)
+]
+const FKS_U1 = [...FKS_PHASE4B, 'private.rate_events.user_id:c:notnull'].sort() // creation records go with the account
+const FKS_D35 = [...FKS_U1, 'players.self_user_id:c:null'].sort()            // a self registration goes with its owner
+const FKS_U4 = [...FKS_D35, 'private.team_member_blocks.user_id:c:notnull'].sort() // block entries go with the account
+async function fksToUsers(db: Db) {
+  return (await db.query<{ k: string }>(`
       select c.conrelid::regclass::text || '.' || a.attname || ':' || c.confdeltype::text || ':' || case when a.attnotnull then 'notnull' else 'null' end as k
       from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
       where c.contype = 'f' and c.confrelid = 'auth.users'::regclass and c.connamespace in ('public'::regnamespace, 'private'::regnamespace)
       order by 1`)).rows.map((r) => r.k)
-    expect(rows).toEqual([
-      'attendance.updated_by:n:null',              // SET NULL
-      'events.created_by:n:null',
-      'events.deleted_by:n:null',
-      'events.updated_by:n:null',
-      'guardian_invitations.created_by:c:notnull', // CASCADE
-      'guardian_invitations.used_by:n:null',
-      'player_guardians.user_id:c:notnull',        // CASCADE (unchanged, guarded)
-      'players.archived_by:n:null',
-      'players.created_by:a:null',                 // NO ACTION kept (purge clears it)
-      'players.updated_by:n:null',
-      'private.account_deletions.user_id:c:notnull', // deletion state goes with the Auth user
-      'team_members.user_id:c:notnull',            // CASCADE (unchanged, guarded)
-      'team_owner_transfers.from_user:c:notnull',
-      'team_owner_transfers.to_user:c:notnull',
-      'teams.created_by:a:null',                   // NO ACTION kept (purge clears it)
-    ])
+}
+
+describe('1. per-FK handling (not a blanket SET NULL)', () => {
+  it('matches the design table (Phase 4-B, before U1)', async () => {
+    expect(await fksToUsers(await createDb({ before: U1 }))).toEqual(FKS_PHASE4B)
+  })
+
+  it('matches the design table with U1 (one more FK: rate_events.user_id, CASCADE)', async () => {
+    expect(await fksToUsers(await createDb({ before: D35 }))).toEqual(FKS_U1)
+  })
+
+  it('matches the design table with D3.5 (one more FK: players.self_user_id, CASCADE, nullable)', async () => {
+    expect(await fksToUsers(await createDb({ before: U4 }))).toEqual(FKS_D35)
+  })
+
+  it('matches the design table with U4 (one more FK: team_member_blocks.user_id, CASCADE, NOT NULL)', async () => {
+    expect(await fksToUsers(await createDb())).toEqual(FKS_U4)
+  })
+
+  it('U4 block entries are removed with the account (purge + Auth deletion)', async () => {
+    const db = await createDb()
+    const owner = '5440aaaa-0000-4000-8000-000000000001', gone = '5440aaaa-0000-4000-8000-000000000002'
+    for (const u of [owner, gone]) await addUser(db, u)
+    const [t] = await q(db, owner, `select id, share_token from public.create_team('T', 'o')`)
+    await joinTeamAs(db, gone, t.share_token, 'g')
+    await q(db, owner, `select public.remove_member($1, $2)`, [t.id, gone])
+    expect((await db.query(`select 1 from private.team_member_blocks where user_id = $1`, [gone])).rows).toHaveLength(1)
+    expect((await purge(db, gone)).status).toBe('purged')
+    await deleteAuthUser(db, gone)
+    expect((await db.query(`select 1 from private.team_member_blocks where user_id = $1`, [gone])).rows).toHaveLength(0)
+  })
+
+  it('U1 creation records are removed with the account (purge + Auth deletion)', async () => {
+    const db = await createDb()
+    const me = '5170aaaa-0000-4000-8000-000000000001'
+    await addUser(db, me)
+    await q(db, me, `select public.create_team('T', 'me')`)
+    expect((await db.query(`select 1 from private.rate_events where user_id = $1`, [me])).rows).toHaveLength(1)
+    expect((await purge(db, me)).status).toBe('purged')
+    await deleteAuthUser(db, me)
+    expect((await db.query(`select 1 from private.rate_events where user_id = $1`, [me])).rows).toHaveLength(0)
   })
 })
 
@@ -299,7 +346,9 @@ describe('5. identity, re-authentication and old tokens', () => {
     await deleteAuthUser(s.db, P3)
     expect(await q(s.db, P3, 'select id from public.teams')).toEqual([])
     expect(await q(s.db, P3, 'select id from public.players')).toEqual([])
-    for (const sql of [`select public.create_team('x', 'x')`, `select public.join_team('${s.t1.share_token}', 'x')`,
+    // D5: joining goes through the join link (the old share-token path is closed for everyone)
+    const joinToken = (await s.db.query<any>('select token from private.team_join_tokens where team_id = $1', [s.t1.id])).rows[0].token
+    for (const sql of [`select public.create_team('x', 'x')`, `select public.join_by_token('${joinToken}', 'x')`,
       `select public.set_attendance('${s.e1}', '${s.k1}', 'attend')`, 'select public.my_owner_transfers()']) {
       await expect(q(s.db, P3, sql)).rejects.toThrow(/session_expired/)
     }
@@ -349,7 +398,7 @@ describe('7. failures: nothing half-done in the DB; a failed Auth deletion can a
     expect((await preview(s.db, P3)).deletion_pending).toBe(true)
     expect(await q(s.db, P3, 'select id from public.teams')).toEqual([])
     await expect(q(s.db, P3, `select public.create_team('x', 'x')`)).rejects.toThrow(/account_deletion_pending/)
-    await expect(q(s.db, P3, `select public.join_team($1, 'x')`, [s.t1.share_token])).rejects.toThrow(/account_deletion_pending/)
+    await expect(joinTeamAs(s.db, P3, s.t1.share_token, 'x')).rejects.toThrow(/account_deletion_pending/)
     const [{ r: inv }] = await q(s.db, P2, `select public.create_guardian_invitation($1) as r`, [s.k2])
     await expect(q(s.db, P3, `select public.accept_guardian_invitation($1, 'x')`, [inv.token])).rejects.toThrow(/account_deletion_pending/)
     // retry hours later with the same (old) session: allowed, because the data is already gone
@@ -370,7 +419,7 @@ describe('7. failures: nothing half-done in the DB; a failed Auth deletion can a
     const s = await scenario()
     await purge(s.db, P3)
     await q(s.db, P1, `select public.create_team('P1のチーム', 'P1')`)
-    await q(s.db, X, `select public.join_team($1, 'X')`, [s.t1.share_token])
+    await joinTeamAs(s.db, X, s.t1.share_token, 'X')
     expect((await preview(s.db, P1)).deletion_pending).toBe(false)
   })
 

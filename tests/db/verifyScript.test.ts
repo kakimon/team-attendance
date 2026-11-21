@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { addUser, asUser, createDb } from './setup'
+import { addUser, asUser, createDb, joinTeamAs } from './setup'
 
 it('cloud verification script passes and rolls everything back', async () => {
   const db = await createDb()
@@ -13,7 +13,7 @@ it('cloud verification script passes and rolls everything back', async () => {
     `select id, share_token from public.create_team('テストFC', 'テスト監督')`)).rows[0]!)
   await asUser(db, A, () => db.query(`select public.create_event($1, '練習', now() + interval '1 day')`, [team.id]))
   await asUser(db, A, () => db.query(`select public.register_player($1, 'テスト　太郎')`, [team.id]))
-  await asUser(db, B, () => db.query(`select public.join_team($1, 'test2')`, [team.share_token]))
+  await joinTeamAs(db, B, team.share_token, 'test2')
   const count = async () => (await db.query<{ n: string }>(
     `select (select count(*) from public.players) + (select count(*) from public.guardian_invitations)
       + (select count(*) from public.attendance) + (select count(*) from public.player_guardians) as n`)).rows[0]!.n
@@ -36,7 +36,7 @@ it('also works when every account has joined the team (C = temporary ID)', async
     `select id, share_token from public.create_team('テストFC', 'テスト監督')`)).rows[0]!)
   await asUser(db, A, () => db.query(`select public.create_event($1, '練習', now() + interval '1 day')`, [team.id]))
   await asUser(db, A, () => db.query(`select public.register_player($1, 'テスト　太郎')`, [team.id]))
-  for (const u of [B, X]) await asUser(db, u, () => db.query(`select public.join_team($1, 'x')`, [team.share_token]))
+  for (const u of [B, X]) await joinTeamAs(db, u, team.share_token, 'x')
   const sql = readFileSync(join(import.meta.dirname, '../../scripts/verify-cloud-server-deny.sql'), 'utf8')
   const err = await db.exec(sql).then(() => null, (e: Error) => e.message)
   expect(err).toMatch(/^VERIFY_RESULT/)

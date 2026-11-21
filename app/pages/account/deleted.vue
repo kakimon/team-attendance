@@ -12,7 +12,7 @@ import { CircleCheck } from 'lucide-vue-next'
         <NuxtLink to="/" class="btn btn-brand">トップへ</NuxtLink>
       </EmptyState>
       <p class="text-center text-xs text-base-content/55">
-        ほかの保護者がいるお子さんの情報と出欠、チームの予定は、チームに残っています。<br>
+        ほかにも回答できる人（家族など）がいたお子さんなどの情報と出欠、チームの予定は、チームに残っています（あなた本人の登録は削除しました）。<br>
         また使うときは、もう一度 Google でログインしてください（新しいアカウントになります）。
       </p>
       <LegalFooter />

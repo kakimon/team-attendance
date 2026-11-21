@@ -1,10 +1,15 @@
 -- Read-only snapshot: row count + md5 of every column of each table.
 -- Only the columns ADDED by Phase 4-A (events/players) are excluded, so before/after can be compared.
+-- The self-registration columns of Phase 5-B D3.5 (players.is_self, players.self_user_id) are not
+-- dropped: they are hashed in their own row "players.self_registration" (read through to_jsonb, so
+-- the script also runs on a database without D3.5; there every value shows as '-').
 -- supabase db query --linked -f scripts/ops/snapshot.sql
 select t.tbl, t.n, t.hash from (
   select 'teams' tbl, count(*) n, md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id::text), '')) hash from public.teams x
   union all select 'team_members', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.team_id::text, x.user_id::text), '')) from public.team_members x
-  union all select 'players', count(*), md5(coalesce(string_agg((to_jsonb(x) - 'updated_at' - 'updated_by' - 'archived_by')::text, '|' order by x.id::text), '')) from public.players x
+  union all select 'players', count(*), md5(coalesce(string_agg((to_jsonb(x) - 'updated_at' - 'updated_by' - 'archived_by' - 'is_self' - 'self_user_id')::text, '|' order by x.id::text), '')) from public.players x
+  union all select 'players.self_registration', count(*) filter (where to_jsonb(x) ->> 'is_self' = 'true'),
+    md5(coalesce(string_agg(x.id::text || '=' || coalesce(to_jsonb(x) ->> 'is_self', '-') || '/' || coalesce(to_jsonb(x) ->> 'self_user_id', '-'), '|' order by x.id::text), '')) from public.players x
   union all select 'player_guardians', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.player_id::text, x.user_id::text), '')) from public.player_guardians x
   union all select 'events', count(*), md5(coalesce(string_agg((to_jsonb(x) - 'updated_at' - 'updated_by' - 'deleted_at' - 'deleted_by')::text, '|' order by x.id::text), '')) from public.events x
   union all select 'attendance', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.event_id::text, x.player_id::text), '')) from public.attendance x
