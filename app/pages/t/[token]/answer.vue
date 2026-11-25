@@ -18,6 +18,11 @@ const added = (s: TeamSnapshot) => {
   return id && s.myPlayerIds.includes(id) ? s.players.find((p) => p.id === id) ?? null : null
 }
 const addedSelf = computed(() => typeof route.query.self === 'string' ? route.query.self : '')
+/** Just accepted a family invitation (?invited=<player id>, set by the invitation page): a one-time note. */
+const invited = (s: TeamSnapshot) => {
+  const id = typeof route.query.invited === 'string' ? route.query.invited : ''
+  return id && s.myPlayerIds.includes(id) ? s.players.find((p) => p.id === id) ?? null : null
+}
 const closeAdded = () => navigateTo({ path: route.path, query: {} }, { replace: true })
 
 function flash(ok: boolean, text: string) {
@@ -64,6 +69,16 @@ function comment(s: TeamSnapshot, eventId: string, playerId: string, text: strin
         </template>
       </div>
       <button type="button" class="btn btn-ghost btn-sm btn-square -mt-1 -mr-1 min-h-11 min-w-11" aria-label="登録のお知らせを閉じる" @click="closeAdded">
+        <X class="size-4" aria-hidden="true" />
+      </button>
+    </div>
+    <div v-if="invited(snap)" role="status" class="flex gap-3 rounded-box border-l-4 border-success bg-base-100 p-4 text-sm shadow-soft">
+      <CircleCheck class="mt-0.5 size-5 shrink-0 text-success" aria-hidden="true" />
+      <div class="min-w-0 flex-1 space-y-1">
+        <p class="font-bold">回答できる人として追加されました</p>
+        <p class="leading-relaxed text-base-content/75">「{{ invited(snap)!.name }}」さんの出欠を、下で入力できます。</p>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm btn-square -mt-1 -mr-1 min-h-11 min-w-11" aria-label="お知らせを閉じる" @click="closeAdded">
         <X class="size-4" aria-hidden="true" />
       </button>
     </div>

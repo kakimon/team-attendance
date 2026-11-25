@@ -1,5 +1,6 @@
 // Takes the method-A backup (read-only) and saves it ONLY when everything is right:
-// the CLI exited 0, the output is a valid format-3 backup of the requested kind with the exact migration list,
+// the CLI exited 0, the output is a valid format-3 backup of the requested kind whose migration list is exactly one
+// known state of that kind (by ID and order: phase4b = 6; latest = 17 or 18, see restore_app_data.template.sql),
 // and every count matches. On any failure nothing is kept (a partial file is removed).
 //
 //   node scripts/ops/take-backup.mjs --kind phase4b --out-dir <folder outside any repository> --project-ref <ref>
@@ -14,7 +15,7 @@ import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeSync, closeSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { checkBackup, gitRepoOf, migrationLists, parseBackup, sha256 } from './build-restore-sql.mjs'
+import { acceptedStates, checkBackup, gitRepoOf, isAcceptedState, migrationLists, parseBackup, sha256 } from './build-restore-sql.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SQL = { phase4b: 'backup_tables.sql', latest: 'backup_tables_latest.sql' }
@@ -59,9 +60,11 @@ function main(args) {
   const backup = parseBackup(text)
   const { counts } = checkBackup(backup)
   if (backup.kind !== kind) throw new Error(`the output is a ${backup.kind} backup, not ${kind}; nothing was saved`)
-  const expected = migrationLists(readFileSync(join(HERE, 'restore_app_data.template.sql'), 'utf8'))[kind]
-  if (JSON.stringify(backup.migrations) !== JSON.stringify(expected)) {
-    throw new Error(`the database has ${backup.migrations?.length ?? '?'} migrations, which is not the ${kind} state (${expected.length}); wrong file or wrong database; nothing was saved`)
+  // The applied migrations must be exactly one known state of the kind (IDs and order; e.g. latest = 17 or 18).
+  const lists = migrationLists(readFileSync(join(HERE, 'restore_app_data.template.sql'), 'utf8'))
+  if (!isAcceptedState(lists, kind, backup.migrations)) {
+    const known = acceptedStates(lists, kind).map((l) => l.length).join(' or ')
+    throw new Error(`the database's ${backup.migrations?.length ?? '?'} migrations are not a known ${kind} state (${known}, by ID and order); wrong file or wrong database; nothing was saved`)
   }
   // 5. save (exclusive create, mode 600), then the checksum
   const hash = sha256(text)

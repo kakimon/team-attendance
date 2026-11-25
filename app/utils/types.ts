@@ -104,6 +104,25 @@ export interface AcceptResult {
   share_token: string
 }
 
+/**
+ * What a family invitation link would do for the signed-in person (read only, nothing consumed).
+ * 'invalid' never says why (unknown, used, revoked, expired, cancelled registration).
+ */
+export type InvitationPreview =
+  | { status: 'invalid' }
+  | { status: 'suspended' }
+  | { status: 'already_guardian'; player_name: string; team_name: string; team_id: string }
+  | { status: 'valid'; player_name: string; team_name: string; is_member: boolean; needs_display_name: boolean; expires_at: string }
+
+/** A family invitation of one registration, as its guardians see it (never the token). */
+export interface ChildInvitation {
+  id: string
+  created_at: string
+  expires_at: string
+  used_at: string | null
+  revoked_at: string | null
+}
+
 /** What deleting the account would do (computed by the server for the caller only). */
 export interface DeletionPreview {
   /** App data already removed, Auth deletion not finished (retry needed). */
@@ -184,6 +203,12 @@ export interface Repo {
   archivePlayer(playerId: string): Promise<void>
   createInvitation(playerId: string): Promise<{ token: string; expires_at: string }>
   acceptInvitation(token: string, displayName: string): Promise<AcceptResult>
+  /** Read only. null = this database has no preview yet (older schema): the page shows the old form. */
+  previewInvitation(token: string): Promise<InvitationPreview | null>
+  /** Guardians of the registration only (RLS). Newest first. */
+  listChildInvitations(playerId: string): Promise<ChildInvitation[]>
+  /** Guardians only. Used / revoked invitations are left as they are (no error). */
+  revokeInvitation(invitationId: string): Promise<void>
   deletionPreview(): Promise<DeletionPreview>
   myOwnerTransfers(): Promise<OwnerTransfers>
   /** Owner asks a member to take over; nothing changes until that member accepts. */
@@ -208,6 +233,7 @@ export const ERROR_CODES = [
   'sole_guardian_children', 'cannot_remove_owner', 'member_not_found', 'owner_cannot_leave', 'not_member',
   'team_has_members', 'confirm_mismatch',
   'leave_confirmation_stale', 'member_data_confirmation_required', 'team_access_suspended', 'not_suspended',
+  'display_name_too_long',
 ] as const
 export type ErrorCode = (typeof ERROR_CODES)[number] | 'unknown'
 
@@ -226,6 +252,7 @@ export const ERROR_MESSAGE: Record<ErrorCode, string> = {
   already_guardian: 'すでにこの人の出欠を回答できるように登録されています。',
   too_many_active_invitations: 'この人の有効な家族招待リンクが上限（5件）に達しています。送信済みのリンクを受け取ってもらうか、有効期限（作成から24時間）が過ぎてからお試しください。',
   name_required: '名前を入力してください。',
+  display_name_too_long: '名前は40文字以内で入力してください。',
   invalid_status: '出欠の値が正しくありません。',
   invalid_role: '権限の値が正しくありません。',
   session_expired: 'ログインの有効期限が切れました。もう一度ログインしてください。',

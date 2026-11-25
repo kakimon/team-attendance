@@ -57,7 +57,7 @@ export function createMockDb() {
     { event_id: 'e2', player_id: 'p1', status: 'attend', comment: null, updated_at: now },
     { event_id: 'e2', player_id: 'p2', status: 'absent', comment: null, updated_at: now },
   ]
-  const invitations: { token: string; player_id: string; created_by: string; expires_at: number; used: boolean }[] = []
+  const invitations: { id?: string; token: string; player_id: string; created_by: string; created_at?: number; expires_at: number; used: boolean; used_at?: number; revoked_at?: number }[] = []
   const joinTokens = new Map<string, string | null>([[DEMO_TEAM_ID, DEMO_JOIN_TOKEN]])
   return { teams: [team], members, players, guardians, events, attendance, invitations, joinTokens }
 }

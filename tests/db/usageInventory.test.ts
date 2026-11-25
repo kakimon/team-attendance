@@ -29,7 +29,8 @@ const run = (d: Db) => d.exec(SQL).then(() => 'NO ERROR', (e: Error) => e.messag
 const hash = async (d: Db) => (await d.query<{ h: string }>(`select md5(coalesce(string_agg(to_jsonb(x)::text, '|'), '')) h from public.teams x`)).rows[0]!.h
 
 describe('usage-inventory.sql', () => {
-  for (const [label, before] of [['Phase 4-B', '20261117000000'], ['latest', undefined]] as const) {
+  // latest 17 = production before the family-invitation migration; latest 18 = after it (the count is printed as is)
+  for (const [label, before] of [['Phase 4-B', '20261117000000'], ['latest 17', '20261124000000'], ['latest 18', undefined]] as const) {
     it(`${label}: all sections counted -> ends with the success marker; nothing changed; no names, e-mails, ids or tokens`, async () => {
       const { d, t } = await db(before)
       const h = await hash(d)
@@ -37,7 +38,10 @@ describe('usage-inventory.sql', () => {
       expect(out.startsWith('USAGE_REPORT（読み取り専用・ロールバック済み）')).toBe(true)
       expect(out.split('\n').at(-1)).toBe(OK)
       for (const s of ['== 0.', '== 1.', '== 2.', '== 3.', '== 4.', '== 5.', '== 6.']) expect(out).toContain(s)
-      expect(out).toContain(`migrations applied: ${before ? 6 : 17}`)
+      const applied = migrationFiles().filter((f) => !before || f < before)
+      expect(out).toContain(`migrations applied: ${applied.length}`)
+      expect(out).toContain(`migration versions: ${applied.map((f) => f.slice(0, 14)).join(' ')}`)
+      expect(applied.length).toBe({ 'Phase 4-B': 6, 'latest 17': 17, 'latest 18': 18 }[label])
       for (const secret of [U1, U2, U1.slice(0, 8), t.id, t.share_token, 'secret-', '@', '秘密']) expect(out).not.toContain(secret)
       expect(out).toContain('registrations 0 (cancelled 0)')
       expect(await hash(d)).toBe(h)

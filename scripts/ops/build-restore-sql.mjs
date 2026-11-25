@@ -87,11 +87,45 @@ export function gitRepoOf(path) {
   }
 }
 
-/** The exact migration lists the restore SQL accepts (single source: the template). */
+/**
+ * The exact migration lists the restore SQL accepts (single source: the template).
+ * functionOnly = the tail of `latest` that changes functions only (no table / column / data).
+ */
 export function migrationLists(template) {
-  const m = [...template.matchAll(/c_(4b|latest)\s+text\[\] := array\[([^\]]+)\]/g)]
+  const m = [...template.matchAll(/c_(4b|latest|fn_only)\s+text\[\] := array\[([^\]]+)\]/g)]
   const get = (k) => m.find((x) => x[1] === k)?.[2].match(/\d{14}/g) ?? []
-  return { phase4b: get('4b'), latest: get('latest') }
+  return { phase4b: get('4b'), latest: get('latest'), functionOnly: get('fn_only') }
+}
+
+/**
+ * Every accepted migration list of a kind, by ID and order (never by count):
+ * phase4b = the 4-B list; latest = the full latest list, or it without a tail of function-only migrations
+ * (today: 17 = production before 20261124000000, 18 = after it). Throws when the template is inconsistent.
+ */
+export function acceptedStates(lists, kind) {
+  if (kind === 'phase4b') return [lists.phase4b]
+  if (kind !== 'latest') return []
+  const { latest, functionOnly } = lists
+  if (JSON.stringify(latest.slice(latest.length - functionOnly.length)) !== JSON.stringify(functionOnly)) {
+    throw new Error('template error: the function-only migrations are not the tail of the latest list')
+  }
+  return Array.from({ length: functionOnly.length + 1 }, (_, cut) => latest.slice(0, latest.length - cut))
+}
+
+/** True when `migrations` is exactly one of the accepted lists of `kind` (same IDs, same order). */
+export function isAcceptedState(lists, kind, migrations) {
+  return Array.isArray(migrations) && acceptedStates(lists, kind).some((l) => JSON.stringify(l) === JSON.stringify(migrations))
+}
+
+/**
+ * The migrations `later` has beyond `earlier` when `earlier` is an exact prefix of it and every extra one is
+ * function-only; otherwise null (not comparable / not restorable without a schema check).
+ */
+export function functionOnlyExtension(lists, earlier, later) {
+  if (!Array.isArray(earlier) || !Array.isArray(later) || earlier.length > later.length) return null
+  if (JSON.stringify(later.slice(0, earlier.length)) !== JSON.stringify(earlier)) return null
+  const extra = later.slice(earlier.length)
+  return extra.every((v) => lists.functionOnly.includes(v)) ? extra : null
 }
 
 const SHA = /^[0-9a-f]{64}$/

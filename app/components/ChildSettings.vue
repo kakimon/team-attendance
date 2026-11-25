@@ -48,12 +48,15 @@ async function save(confirmSimilar: boolean) {
 const link = ref<{ url: string; expiresAt: string } | null>(null)
 const inviteError = ref('')
 const inviting = ref(false)
+const invitesKey = ref(0)
 async function createInvite() {
+  if (inviting.value) return
   inviteError.value = ''
   inviting.value = true
   try {
     const r = await repo.createInvitation(props.child.id)
     link.value = { url: shareUrl('invite', r.token, location.origin, useRuntimeConfig().app.baseURL), expiresAt: r.expires_at }
+    invitesKey.value++
   } catch (e) {
     inviteError.value = errorMessage(e)
   } finally {
@@ -140,11 +143,13 @@ async function archive() {
         <p class="flex items-center gap-1.5 text-xs text-base-content/60">
           <Clock class="size-3.5" />有効期限 {{ formatDateTime(link.expiresAt) }} まで・1回だけ使えます
         </p>
+        <p class="text-xs text-base-content/55">このリンクはこの画面でしか表示されません。なくした場合や、違う人に送ってしまった場合は、下の一覧で無効にして作り直してください。</p>
       </div>
       <button v-else type="button" class="btn btn-brand btn-lg mt-5 w-full" :disabled="inviting" @click="createInvite">
         <Link class="size-5" />招待リンクを作成
       </button>
       <p v-if="inviteError" role="alert" class="mt-2 text-sm text-error">{{ inviteError }}</p>
+      <ChildInvitations :player-id="child.id" :refresh-key="invitesKey" />
     </AppCard>
 
     <div class="flex gap-3 rounded-box bg-base-100/70 p-4 text-sm text-base-content/70">

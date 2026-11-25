@@ -75,6 +75,26 @@ describe('take-backup.mjs', () => {
     expect(r.stdout + r.stderr).not.toContain('secret')
   })
 
+  it('latest: saved for both known states (17 = production, 18 = after the function-only migration); any other list is refused', () => {
+    const latest = ['--kind', 'latest', '--project-ref', 'ztlpsihzqzxnqyngxnbp']
+    const l17 = LISTS.latest.filter((v: string) => !LISTS.functionOnly.includes(v))
+    expect(l17).toHaveLength(17)
+    for (const migrations of [LISTS.latest, l17]) {
+      const s = sandbox()
+      const r = s.take([...latest, '--out-dir', s.out], { out: cli(backup('latest', { migrations })) })
+      expect(r.status, r.stderr).toBe(0)
+      expect(readdirSync(s.out).filter((f) => f.endsWith('.json'))).toHaveLength(1)
+    }
+    const swapped = [...l17.slice(0, -2), l17.at(-1), l17.at(-2)]
+    for (const migrations of [[...LISTS.latest, '20991231000000'], [...l17, '20261124000001'], l17.slice(0, 16), swapped]) {
+      const s = sandbox()
+      const r = s.take([...latest, '--out-dir', s.out], { out: cli(backup('latest', { migrations })) })
+      expect(r.status).toBe(1)
+      expect(r.stderr).toMatch(/not a known latest state \(18 or 17, by ID and order\).*nothing was saved/)
+      expect(existsSync(s.out) ? readdirSync(s.out) : []).toEqual([])
+    }
+  })
+
   it('CLI failure (non-zero exit) -> stops, nothing saved, even when it printed something', () => {
     const s = sandbox()
     const r = s.take([...ok, '--out-dir', s.out], { out: cli(backup()).slice(0, 50), exit: 1, err: 'failed to execute query: error: permission denied for table teams' })
@@ -92,7 +112,7 @@ describe('take-backup.mjs', () => {
     for (const [out, re] of [
       [`[{"backup": {"teams": [{"name": "${SECRET}"`, /not valid JSON \(\d+ characters; content not shown\)/],
       [cli(backup('latest')), /is a latest backup, not phase4b/],
-      [cli(backup('phase4b', { migrations: LISTS.latest })), /17 migrations, which is not the phase4b state \(6\)/],
+      [cli(backup('phase4b', { migrations: LISTS.latest })), /18 migrations are not a known phase4b state \(6, by ID and order\)/],
       [cli(backup('phase4b', { counts: { ...backup().counts as object, teams: 5 } })), /teams: 1 rows but the backup recorded 5/],
       ['[]', /expected exactly 1 row/],
     ] as const) {

@@ -2,12 +2,12 @@
 // Writes = RPC only (SECURITY DEFINER functions with explicit checks).
 import {
   ERROR_CODES, RepoError,
-  type AcceptResult, type BlockedMember, type DetachResult, type JoinLink, type JoinPreview, type JoinResult,
+  type AcceptResult, type BlockedMember, type ChildInvitation, type InvitationPreview, type DetachResult, type JoinLink, type JoinPreview, type JoinResult,
   type LeavePreview, type LeaveCleanupPreview, type SuspendedLeavePreview, type SuspendedLeaveResult, type SuspendedMembership, type MemberImpact, type RegisterSelfResult, type TeamMember, type Attendance, type DeletionPreview, type Member, type OwnerTransfers, type Player, type Repo,
   type Role, type Team, type TeamEvent, type TransferResponse,
 } from '../utils/types'
 
-type DbError = { message: string } | null
+type DbError = { message: string; code?: string } | null
 type Res = { data: any; error: DbError }
 
 /** The subset of supabase-js we use (lets tests plug in a PGlite-backed fake). */
@@ -256,6 +256,23 @@ export function createSupabaseRepo(db: DbClient, uid: () => string, invoke?: Inv
     async acceptInvitation(token, displayName) {
       return unwrap<AcceptResult>(
         await db.rpc('accept_guardian_invitation', { p_token: token, p_display_name: displayName }))
+    },
+
+    async previewInvitation(token) {
+      const r = await db.rpc('preview_guardian_invitation', { p_token: token })
+      // Only a missing function means "older database"; auth / network / other errors are thrown as usual.
+      if (r.error && (r.error.code === 'PGRST202' || missingFunction('preview_guardian_invitation', r.error.message))) return null
+      return unwrap<InvitationPreview>(r)
+    },
+
+    async listChildInvitations(playerId) {
+      // Only the state columns (token_hash is not readable by the app at all).
+      return unwrap<ChildInvitation[]>(await db.from('guardian_invitations')
+        .select('id,created_at,expires_at,used_at,revoked_at').eq('player_id', playerId).order('created_at', { ascending: false }))
+    },
+
+    async revokeInvitation(invitationId) {
+      unwrap(await db.rpc('revoke_guardian_invitation', { p_invitation_id: invitationId }))
     },
 
     async deletionPreview() {

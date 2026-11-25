@@ -69,6 +69,7 @@ export function createMockRepo(uid: () => string, userName: () => string, loginA
   const memberRow = (teamId: string, userId = uid()) => db.members.find((m) => m.team_id === teamId && m.user_id === userId)
   const member = (teamId: string) => (suspended.has(`${teamId}:${uid()}`) ? undefined : memberRow(teamId))
   const isGuardian = (playerId: string) => db.guardians.some((g) => g.player_id === playerId && g.user_id === uid())
+  const usable = (i: { used: boolean; revoked_at?: number; expires_at: number }) => !i.used && !i.revoked_at && i.expires_at > Date.now()
   const must = (ok: unknown, code: ConstructorParameters<typeof RepoError>[0] = 'forbidden') => {
     if (!ok) throw new RepoError(code)
   }
@@ -358,8 +359,9 @@ export function createMockRepo(uid: () => string, userName: () => string, loginA
       must(!livePlayer(playerId)?.self_user_id || livePlayer(playerId)!.self_user_id === uid())
       must(livePlayer(playerId), 'not_found')
       const token = rid() + rid() + rid()
-      const expires_at = Date.now() + 24 * 3600_000
-      db.invitations.push({ token, player_id: playerId, created_by: uid(), expires_at, used: false })
+      const created_at = Date.now()
+      const expires_at = created_at + 24 * 3600_000
+      db.invitations.push({ id: rid(), token, player_id: playerId, created_by: uid(), created_at, expires_at, used: false })
       return { token, expires_at: new Date(expires_at).toISOString() }
     },
     async acceptInvitation(token, displayName) {
@@ -373,11 +375,50 @@ export function createMockRepo(uid: () => string, userName: () => string, loginA
       const result = { player_id: p!.id, player_name: p!.name, team_id: t.id, share_token: t.share_token }
       // Already a guardian: normal result, and the invitation is NOT consumed.
       if (isGuardian(p!.id)) return { status: 'already_guardian', ...result }
-      must(!inv!.used && inv!.expires_at > Date.now(), 'invitation_invalid')
+      must(usable(inv!), 'invitation_invalid')
+      // Same rules as the database: only a NEW member needs a (trimmed, 1-40 character) name.
+      const isNew = !memberRow(t.id)
+      const name = (displayName ?? '').replace(/^[\s\u3000]+|[\s\u3000]+$/g, '')
+      if (isNew) {
+        must(name, 'name_required')
+        must(name.length <= 40, 'display_name_too_long')
+      }
       inv!.used = true
-      if (!member(t.id)) db.members.push({ team_id: t.id, user_id: uid(), role: 'member', display_name: displayName || userName() })
+      inv!.used_at = Date.now()
+      if (isNew) db.members.push({ team_id: t.id, user_id: uid(), role: 'member', display_name: name })
       db.guardians.push({ player_id: p!.id, user_id: uid(), added_via: 'invitation' })
       return { status: 'accepted', ...result }
+    },
+
+    async previewInvitation(token) {
+      const inv = db.invitations.find((i) => i.token === token)
+      const p = inv && livePlayer(inv.player_id)
+      if (!inv || !p) return { status: 'invalid' }
+      const t = db.teams.find((x) => x.id === p.team_id)!
+      if (suspended.has(`${t.id}:${uid()}`)) return { status: 'suspended' }
+      if (isGuardian(p.id)) return { status: 'already_guardian', player_name: p.name, team_name: t.name, team_id: t.id }
+      if (!usable(inv)) return { status: 'invalid' }
+      const isMember = !!memberRow(t.id)
+      return { status: 'valid', player_name: p.name, team_name: t.name, is_member: isMember, needs_display_name: !isMember,
+        expires_at: new Date(inv.expires_at).toISOString() }
+    },
+
+    async listChildInvitations(playerId) {
+      if (!isGuardian(playerId)) return []
+      return db.invitations.filter((i) => i.player_id === playerId)
+        .sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0))
+        .map((i) => ({
+          id: i.id ?? i.token.slice(0, 8), created_at: new Date(i.created_at ?? 0).toISOString(),
+          expires_at: new Date(i.expires_at).toISOString(),
+          used_at: i.used ? new Date(i.used_at ?? i.created_at ?? 0).toISOString() : null,
+          revoked_at: i.revoked_at ? new Date(i.revoked_at).toISOString() : null,
+        }))
+    },
+
+    async revokeInvitation(invitationId) {
+      const inv = db.invitations.find((i) => i.id === invitationId)
+      must(inv && isGuardian(inv.player_id))
+      if (!inv!.used && !inv!.revoked_at) inv!.revoked_at = Date.now()
     },
 
     async onboardingFacts(teamId, myPlayerIds) {

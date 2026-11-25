@@ -27,6 +27,13 @@
 --     or keys are wrong; a newer backup would go into an older schema; ANY Auth user referenced by the backup is
 --     missing; rows would revive data of a user in the middle of account deletion; tokens would collide; the
 --     number of whole teams differs from the expectation; or a security invariant is broken afterwards.
+--
+-- Migration states (by migration ID AND order, never by count; c_* below are the single source for the scripts):
+--   phase4b = c_4b.  latest = c_latest, or c_latest without a TAIL of c_fn_only migrations (those change functions
+--   only: no table, column or data), i.e. today 17 (production before 20261124000000) or 18 (after it).
+--   Anything else (an unknown ID, a gap, another order) is refused. A latest backup restores into the same state,
+--   or into a later state whose extra migrations are all in c_fn_only (the tables are identical); never into an
+--   earlier one.
 --   * Messages contain counts only: never names, e-mails, ids or tokens.
 --   * Run as the database owner (Supabase CLI / SQL editor), never through the app's API.
 -- =============================================================
@@ -39,9 +46,14 @@ declare
   c_4b     text[] := array['20261107000000','20261108000000','20261109000000','20261110000000','20261113000000','20261113100000'];
   c_latest text[] := array['20261107000000','20261108000000','20261109000000','20261110000000','20261113000000','20261113100000',
                            '20261117000000','20261117100000','20261117200000','20261117230000','20261117233000','20261117234500',
-                           '20261117235500','20261118000000','20261118100000','20261118200000','20261118210000'];
+                           '20261117235500','20261118000000','20261118100000','20261118200000','20261118210000',
+                           '20261124000000'];
+  -- the tail of c_latest that changes functions only (no table / column / data): an earlier latest state is
+  -- c_latest without some of these, from the end
+  c_fn_only text[] := array['20261124000000'];
   c_meta   text[] := array['format','kind','taken_at','migrations','auth_users_count','counts'];
   v_db text[]; v_target text; v_kind text; v_tables text[];
+  v_bm text[]; v_cut int;
   t text; k text; n bigint; m bigint; x bigint; v_missing int;
   v_cfg jsonb; v_rep text := ''; v_conf text := ''; v_post text := '';
   v_new_tokens int := 0;
@@ -64,15 +76,25 @@ begin
   exception when undefined_table then
     raise exception 'restore_aborted: migration history (supabase_migrations.schema_migrations) not found';
   end;
-  v_target := case when v_db = c_4b then 'phase4b' when v_db = c_latest then 'latest' end;
+  -- c_fn_only must be exactly the tail of c_latest (a broken template is refused, not trusted)
+  if c_latest[cardinality(c_latest) - cardinality(c_fn_only) + 1 : cardinality(c_latest)] is distinct from c_fn_only then
+    raise exception 'restore_aborted: template error: c_fn_only is not the tail of c_latest';
+  end if;
+  v_target := case when v_db = c_4b then 'phase4b' end;
+  for v_cut in 0 .. cardinality(c_fn_only) loop
+    if v_target is null and v_db = c_latest[1 : cardinality(c_latest) - v_cut] then v_target := 'latest'; end if;
+  end loop;
   if v_target is null then
-    raise exception 'restore_aborted: the database is neither Phase 4-B (6 migrations) nor the latest (17 migrations): % applied', cardinality(v_db);
+    raise exception 'restore_aborted: the database is neither Phase 4-B (6 migrations) nor a known latest state (% or % migrations, by ID and order): % applied',
+      cardinality(c_latest) - cardinality(c_fn_only), cardinality(c_latest), cardinality(v_db);
   end if;
   if to_regclass('public.team_owner_transfers') is null or to_regclass('private.account_deletions') is null
      or (to_regclass('private.team_join_tokens') is not null) <> (v_target = 'latest')
      or (to_regclass('private.team_member_blocks') is not null) <> (v_target = 'latest')
      or exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'players' and column_name = 'is_self') <> (v_target = 'latest')
-     or exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'team_members' and column_name = 'suspended_at') <> (v_target = 'latest') then
+     or exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'team_members' and column_name = 'suspended_at') <> (v_target = 'latest')
+     -- 20261124000000 adds preview_guardian_invitation: present exactly when that migration is recorded
+     or (to_regprocedure('public.preview_guardian_invitation(text)') is not null) <> ('20261124000000' = any (v_db)) then
     raise exception 'restore_aborted: the database structure does not match its migration history (%)', v_target;
   end if;
 
@@ -93,12 +115,25 @@ begin
   if v_kind is null or v_kind not in ('phase4b', 'latest') then
     raise exception 'restore_aborted: unknown backup kind';
   end if;
-  if (v_kind = 'phase4b' and b -> 'migrations' is distinct from to_jsonb(c_4b))
-     or (v_kind = 'latest' and b -> 'migrations' is distinct from to_jsonb(c_latest)) then
+  if jsonb_typeof(b -> 'migrations') is distinct from 'array'
+     or exists (select 1 from jsonb_array_elements(b -> 'migrations') e where jsonb_typeof(e.value) <> 'string') then
+    raise exception 'restore_aborted: the backup''s migration list does not match its kind (%): taken with the wrong backup file?', v_kind;
+  end if;
+  v_bm := array(select e.value from jsonb_array_elements_text(b -> 'migrations') with ordinality e(value, n) order by e.n);
+  if v_kind = 'phase4b' and v_bm is distinct from c_4b then
+    raise exception 'restore_aborted: the backup''s migration list does not match its kind (%): taken with the wrong backup file?', v_kind;
+  end if;
+  if v_kind = 'latest' and not exists (select 1 from generate_series(0, cardinality(c_fn_only)) g(cut)
+                                        where v_bm = c_latest[1 : cardinality(c_latest) - g.cut]) then
     raise exception 'restore_aborted: the backup''s migration list does not match its kind (%): taken with the wrong backup file?', v_kind;
   end if;
   if v_kind = 'latest' and v_target = 'phase4b' then
     raise exception 'restore_aborted: a latest-schema backup cannot be restored into a Phase 4-B database';
+  end if;
+  -- latest -> latest: same state, or the database is later by function-only migrations; never an older database
+  if v_kind = 'latest' and v_target = 'latest' and cardinality(v_bm) > cardinality(v_db) then
+    raise exception 'restore_aborted: the backup was taken on a later schema (% migrations) than this database (%): apply the missing migrations first',
+      cardinality(v_bm), cardinality(v_db);
   end if;
   v_tables := array['teams','team_members','players','player_guardians','events','attendance','guardian_invitations',
                     'team_owner_transfers','account_deletions']
@@ -283,8 +318,8 @@ begin
   end if;
 
   -- report before inserting: per table backup / present / differs / to restore / left out
-  v_rep := format(E'target: %s (%s migrations) | backup: %s, taken %s | Auth users now %s (backup %s) | scope %s',
-    v_target, cardinality(v_db), v_kind, left(b ->> 'taken_at', 16), (select count(*) from auth.users), coalesce(b ->> 'auth_users_count', '-'), v_scope);
+  v_rep := format(E'target: %s (%s migrations) | backup: %s (%s migrations), taken %s | Auth users now %s (backup %s) | scope %s',
+    v_target, cardinality(v_db), v_kind, cardinality(v_bm), left(b ->> 'taken_at', 16), (select count(*) from auth.users), coalesce(b ->> 'auth_users_count', '-'), v_scope);
   v_rep := v_rep || format(E'\nwhole teams to restore: %s | teams still present: %s', (select count(*) from rt), (select count(*) from et));
   for i in 0 .. jsonb_array_length(v_cfg) - 1 loop
     execute format('select count(*) filter (where d.ok), count(*) filter (where d.ok and not d.same) from (select exists (select 1 from %s r where (%s) = (%s)) ok, '
