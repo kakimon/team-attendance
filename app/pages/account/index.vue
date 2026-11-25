@@ -2,7 +2,6 @@
 // アカウント: who am I, owner hand-over requests, and the way to delete the account.
 import { ChevronRight, CircleUserRound, ExternalLink, Mail, UserX } from 'lucide-vue-next'
 const { user } = useAuth()
-const privacyMail = `mailto:${PRIVACY_EMAIL}?subject=${encodeURIComponent('【みんなの出欠】個人情報に関するご請求')}`
 </script>
 
 <template>
@@ -30,12 +29,8 @@ const privacyMail = `mailto:${PRIVACY_EMAIL}?subject=${encodeURIComponent('【�
       <AppCard title="お問い合わせ" :icon="Mail" tight>
         <p class="text-sm text-base-content/75">退会はこの画面からご自身でできます（運営者への連絡は不要です）。</p>
         <a :href="CONTACT_FORM_URL" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm mt-3 w-full border-base-300">
-          <ExternalLink class="size-4" />ご質問・不具合（お問い合わせフォーム）
+          <ExternalLink class="size-4" />ご質問・不具合・個人情報に関するお問い合わせ
         </a>
-        <p class="mt-3 text-xs text-base-content/65">
-          個人情報の開示・訂正・利用停止などのご請求：
-          <a :href="privacyMail" class="link break-all">{{ PRIVACY_EMAIL }}</a>
-        </p>
       </AppCard>
       <LegalFooter />
     </main>
