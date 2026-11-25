@@ -1,17 +1,22 @@
-// Cloudflare Workers — static assets only (the Nuxt SPA built by `npm run generate`).
-// No Worker script: "main" is intentionally absent, so every request is answered from the files in
-// .output/public and no billable code runs. Deploy (separate approval): `npx wrangler deploy` after `npm run generate`.
+// Cloudflare Workers — static assets (the Nuxt SPA built by `npm run generate`) plus one tiny Worker that runs
+// ONLY for /_nuxt/* (run_worker_first). Every other URL is answered from the files in .output/public without
+// running any code. Deploy (separate approval): Workers Builds `npx wrangler versions upload`, then Promote.
 // Build-time variables (Cloudflare build settings, never committed): NUXT_PUBLIC_SUPABASE_URL,
 // NUXT_PUBLIC_SUPABASE_ANON_KEY (publishable key). NUXT_APP_BASE_URL stays unset (= "/").
 {
   "name": "team-attendance",
   "compatibility_date": "2026-05-01",
+  // A missing /_nuxt/<hash>.js|css would otherwise get index.html with 200 and a year-long immutable cache
+  // (a blank / 500 page after a deploy). The Worker answers it with a 404 that is never cached.
+  "main": "./cloudflare/assets-worker.js",
   "assets": {
     "directory": "./.output/public",
+    "binding": "ASSETS",
     // A URL with no file (e.g. /join/<token>, /t/<id>, /auth/callback, a reload on any app page) gets
     // /index.html with 200, and the SPA router renders it (unknown paths show the app's own 404 page).
     "not_found_handling": "single-page-application",
-    "html_handling": "auto-trailing-slash"
+    "html_handling": "auto-trailing-slash",
+    "run_worker_first": ["/_nuxt/*"]
   },
   "workers_dev": true,
   "preview_urls": false

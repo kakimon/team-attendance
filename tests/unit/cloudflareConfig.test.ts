@@ -1,5 +1,5 @@
-// Cloudflare Workers static-asset publishing: the config must keep the app a static SPA with no Worker script,
-// serve app URLs (direct access / reload) from index.html, and send the minimum security / cache headers.
+// Cloudflare Workers static-asset publishing: the config must keep the app a static SPA (a Worker runs only for
+// /_nuxt/*), serve app URLs (direct access / reload) from index.html, and send the minimum security / cache headers.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -20,10 +20,10 @@ const rules = (() => {
 })()
 
 describe('wrangler.jsonc (Workers static assets)', () => {
-  it('static assets only: the Nuxt generate output, no Worker script, SPA fallback', () => {
-    expect(cfg.main).toBeUndefined()
-    expect(cfg.assets).toEqual({ directory: './.output/public', not_found_handling: 'single-page-application', html_handling: 'auto-trailing-slash' })
-    expect(cfg.assets.binding).toBeUndefined()
+  it('static assets with SPA fallback; the Worker runs first only for the hashed build files (/_nuxt/*)', () => {
+    expect(cfg.main).toBe('./cloudflare/assets-worker.js')
+    expect(cfg.assets).toEqual({ directory: './.output/public', binding: 'ASSETS', not_found_handling: 'single-page-application',
+      html_handling: 'auto-trailing-slash', run_worker_first: ['/_nuxt/*'] })
     expect(Object.keys(cfg).filter((k) => /vars|kv|d1|r2|durable|services|routes|secrets/i.test(k))).toEqual([])
     expect(cfg.compatibility_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     expect(cfg.preview_urls).toBe(false)
@@ -53,5 +53,54 @@ describe('app/public/_headers', () => {
 
   it('.assetsignore keeps GitHub Pages-only files from being served', () => {
     expect(readFileSync(join(repo, 'app/public/.assetsignore'), 'utf8').split('\n').map((l) => l.trim())).toContain('.nojekyll')
+  })
+})
+
+describe('cloudflare/assets-worker.js (only /_nuxt/*)', () => {
+  type Init = { status?: number; type?: string; body?: string; headers?: Record<string, string> }
+  const assets = (init: Init) => ({
+    fetch: async () => new Response(init.status === 304 ? null : (init.body ?? 'x'), { status: init.status ?? 200,
+      headers: { ...(init.type ? { 'content-type': init.type } : {}), ...(init.headers ?? {}) } }),
+  })
+  const run = async (init: Init, path = '/_nuxt/Abc12345.js') => {
+    // @ts-expect-error plain ESM module without type declarations
+    const worker = (await import('../../cloudflare/assets-worker.js')).default
+    return worker.fetch(new Request('https://example.test' + path), { ASSETS: assets(init) }) as Promise<Response>
+  }
+
+  it('an existing JS / CSS file is served unchanged, cached for a year (immutable), nosniff', async () => {
+    for (const type of ['text/javascript', 'application/javascript; charset=utf-8', 'text/css; charset=utf-8']) {
+      const r = await run({ type, body: 'export {}' })
+      expect(r.status).toBe(200)
+      expect(r.headers.get('content-type')).toBe(type)
+      expect(r.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
+      expect(r.headers.get('x-content-type-options')).toBe('nosniff')
+      expect(await r.text()).toBe('export {}')
+    }
+  })
+
+  it('builds/latest.json (changes on every deploy) is revalidated, not cached for a year', async () => {
+    const r = await run({ type: 'application/json', body: '{}' }, '/_nuxt/builds/latest.json')
+    expect(r.status).toBe(200)
+    expect(r.headers.get('cache-control')).toBe('no-cache')
+    expect((await run({ type: 'application/json', body: '{}' }, '/_nuxt/builds/meta/abc.json')).headers.get('cache-control')).toMatch(/immutable/)
+  })
+
+  it('a missing file (the SPA fallback answers index.html with 200) becomes a 404 that is never cached', async () => {
+    const r = await run({ type: 'text/html; charset=utf-8', body: '<!doctype html>', headers: { 'cache-control': 'public, max-age=31536000, immutable' } })
+    expect(r.status).toBe(404)
+    expect(r.headers.get('content-type')).not.toMatch(/html/)
+    expect(r.headers.get('cache-control')).toBe('no-store')
+    expect(await r.text()).not.toMatch(/<html|doctype/i)
+  })
+
+  it('any other non-success answer is also a non-cached 404; a 304 revalidation passes through', async () => {
+    for (const status of [404, 500, 503]) {
+      const r = await run({ status, type: 'text/plain' })
+      expect(r.status).toBe(404)
+      expect(r.headers.get('cache-control')).toBe('no-store')
+    }
+    const nm = await run({ status: 304 })
+    expect(nm.status).toBe(304)
   })
 })
