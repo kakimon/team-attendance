@@ -111,7 +111,7 @@ function start(intent: 'create' | null = null) {
           </div>
         </dl>
         <p class="mt-3 text-xs leading-relaxed text-base-content/55">
-          出欠の回答は、いま記録されている回答の数です（回答を変更しても 1 件のままです）。数字は 1 時間ごとに更新されます。
+          出欠の回答は、いま記録されている回答の数です（回答を変更しても 1 件のままです）。数字は最大 24 時間ごとに更新されます。
         </p>
       </section>
 

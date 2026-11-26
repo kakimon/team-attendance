@@ -1,4 +1,4 @@
-// Top page (logged out): usage numbers cached for an hour per browser, the page structure, and the existing
+// Top page (logged out): usage numbers cached for 24 hours per browser, the page structure, and the existing
 // login / invitation / legal-link wiring kept.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -14,8 +14,9 @@ function memoryStore() {
   return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), m }
 }
 
-describe('loadServiceStats (hourly cache)', () => {
-  it('asks the server once, then serves the cached numbers for an hour', async () => {
+describe('loadServiceStats (24-hour cache)', () => {
+  it('asks the server once, then serves the cached numbers for 24 hours', async () => {
+    expect(STATS_TTL_MS).toBe(24 * 60 * 60 * 1000)
     const store = memoryStore(); const fetch = vi.fn(async () => S)
     expect(await loadServiceStats(fetch, store, 1000)).toEqual(S)
     expect(await loadServiceStats(fetch, store, 1000 + STATS_TTL_MS - 1)).toEqual(S)

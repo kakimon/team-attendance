@@ -1,8 +1,8 @@
-// The top page's usage numbers: fetched at most once an hour per browser (cached in localStorage),
+// The top page's usage numbers: fetched at most once a day per browser (cached in localStorage),
 // so visitors do not query the database on every page view. Storage problems never break the page.
 import type { ServiceStats } from './types'
 
-export const STATS_TTL_MS = 60 * 60 * 1000
+export const STATS_TTL_MS = 24 * 60 * 60 * 1000
 const KEY = 'service-stats:v1'
 
 type Store = Pick<Storage, 'getItem' | 'setItem'> | null | undefined
