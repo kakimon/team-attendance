@@ -1,6 +1,6 @@
 // Takes the method-A backup (read-only) and saves it ONLY when everything is right:
 // the CLI exited 0, the output is a valid format-3 backup of the requested kind whose migration list is exactly one
-// known state of that kind (by ID and order: phase4b = 6; latest = 17 or 18, see restore_app_data.template.sql),
+// known state of that kind (by ID and order: phase4b = 6; latest = 17, 18 or 19, see restore_app_data.template.sql),
 // and every count matches. On any failure nothing is kept (a partial file is removed).
 //
 //   node scripts/ops/take-backup.mjs --kind phase4b --out-dir <folder outside any repository> --project-ref <ref>
@@ -60,7 +60,7 @@ function main(args) {
   const backup = parseBackup(text)
   const { counts } = checkBackup(backup)
   if (backup.kind !== kind) throw new Error(`the output is a ${backup.kind} backup, not ${kind}; nothing was saved`)
-  // The applied migrations must be exactly one known state of the kind (IDs and order; e.g. latest = 17 or 18).
+  // The applied migrations must be exactly one known state of the kind (IDs and order; e.g. latest = 17, 18 or 19).
   const lists = migrationLists(readFileSync(join(HERE, 'restore_app_data.template.sql'), 'utf8'))
   if (!isAcceptedState(lists, kind, backup.migrations)) {
     const known = acceptedStates(lists, kind).map((l) => l.length).join(' or ')

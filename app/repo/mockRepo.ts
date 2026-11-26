@@ -2,7 +2,7 @@
 // In-memory data that mimics the server rules of the SQL RPCs.
 import { isSimilarName } from '../utils/normalizeName'
 import { DELETE_CONFIRM_TEXT, LEAVE_CLEANUP_CONFIRM, RepoError, type Player, type Repo, type Team } from '../utils/types'
-import { createMockDb } from './mockData'
+import { createMockDb, MOCK_USERS } from './mockData'
 
 export { DEMO_JOIN_TOKEN, DEMO_TEAM_ID, MOCK_USERS } from './mockData'
 
@@ -401,6 +401,10 @@ export function createMockRepo(uid: () => string, userName: () => string, loginA
       const isMember = !!memberRow(t.id)
       return { status: 'valid', player_name: p.name, team_name: t.name, is_member: isMember, needs_display_name: !isMember,
         expires_at: new Date(inv.expires_at).toISOString() }
+    },
+
+    async serviceStats() {
+      return { users: MOCK_USERS.length, teams: db.teams.length, answers: db.attendance.length, counted_at: new Date().toISOString() }
     },
 
     async listChildInvitations(playerId) {

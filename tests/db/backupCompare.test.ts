@@ -12,7 +12,8 @@ import { ADDED_COLUMNS, compareBackups, PHASE4B_COLUMNS } from '../../scripts/op
 
 const ops = (f: string) => readFileSync(join(import.meta.dirname, '../../scripts/ops', f), 'utf8')
 const PHASE4B_END = '20261117000000' // first migration after Phase 4-B
-const FN_ONLY = '20261124000000'      // function-only migration (family invitations): latest 17 -> 18
+const FN_ONLY = '20261124000000'      // first function-only migration (family invitations): latest 17 -> 18
+const FN_ONLY2 = '20261126000000'     // second one (top-page usage numbers): latest 18 -> 19
 const U = (n: number) => `62000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const [OW, AD, GU, SE, GONE, OUT] = [1, 2, 3, 4, 5, 6].map(U)
 
@@ -163,7 +164,7 @@ describe('compare-backups.mjs: Phase 4-B -> 11 migrations -> latest', () => {
   })
 })
 
-describe('compare-backups.mjs: latest 17 -> latest 18 (the function-only family-invitation migration)', () => {
+describe('compare-backups.mjs: latest 17 -> latest 19 (the two function-only migrations)', () => {
   /** Production state (17) with data, its latest backup, then 20261124000000 applied (18). */
   async function around() {
     const { db, s, before: b4 } = await migrated()
@@ -176,12 +177,12 @@ describe('compare-backups.mjs: latest 17 -> latest 18 (the function-only family-
   it('SAME: all 11 tables, every column, unchanged; the difference is only the function-only migration', async () => {
     const { db, before } = await around()
     const after = await backupOf(db, 'backup_tables_latest.sql')
-    expect(after.migrations).toEqual([...before.migrations, FN_ONLY])
+    expect(after.migrations).toEqual([...before.migrations, FN_ONLY, FN_ONLY2])
     const r = compareBackups(before, after)
     expect(r.errors).toEqual([])
     expect(r.same).toBe(true)
     for (const t of [...Object.keys(PHASE4B_COLUMNS), 'team_join_tokens', 'team_member_blocks']) expect(lineOf(r, t + ' '), t).toMatch(/added 0 \| removed 0 \| changed 0$/)
-    expect(lineOf(r, 'migrations ')).toMatch(/17 -> 18 \(latest; function-only: 20261124000000\)/)
+    expect(lineOf(r, 'migrations ')).toMatch(/17 -> 19 \(latest; function-only: 20261124000000, 20261126000000\)/)
     expect(r.lines.join('\n')).not.toContain(after.team_join_tokens[0].token)
   })
 
@@ -202,9 +203,9 @@ describe('compare-backups.mjs: latest 17 -> latest 18 (the function-only family-
     const after = await backupOf(db, 'backup_tables_latest.sql')
     expect(compareBackups(after, before).errors.join()).toMatch(/not before plus function-only migrations/)          // 18 -> 17
     const unknown = { ...after, migrations: [...after.migrations, '20991231000000'] }
-    expect(compareBackups(before, unknown).errors.join()).toMatch(/after: 19 migrations, not a known latest state/)
+    expect(compareBackups(before, unknown).errors.join()).toMatch(/after: 20 migrations, not a known latest state/)
     const gap = { ...after, migrations: after.migrations.filter((v: string) => v !== '20261118210000') }
-    expect(compareBackups(before, gap).errors.join()).toMatch(/after: 17 migrations, not a known latest state/)     // 17 by count, wrong IDs
+    expect(compareBackups(before, gap).errors.join()).toMatch(/after: 18 migrations, not a known latest state/)     // 18 by count, wrong IDs
     const reordered = { ...after, migrations: [...after.migrations.slice(0, -2), FN_ONLY, after.migrations.at(-2)] }
     expect(compareBackups(before, reordered).errors.join()).toMatch(/not a known latest state/)
     expect(compareBackups(before, b4).errors.join()).toMatch(/after must be a latest backup when before is latest/)

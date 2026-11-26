@@ -79,7 +79,7 @@ describe('rollback (scripts/ops/rollback_phase4a.sql)', () => {
     const anon = (await db.query<{ f: string }>(
       `select p.proname as f from pg_proc p join pg_namespace n on n.oid = p.pronamespace
        where n.nspname in ('public','private') and has_function_privilege('anon', p.oid, 'execute')`)).rows
-    expect(anon.map((r) => r.f)).toEqual(['health_check'])
+    expect(anon.map((r) => r.f).sort()).toEqual(['health_check', 'service_stats'])
     // data kept (only the attendance status changed by the call above)
     const after = await snapshot(db)
     for (const t of ['teams', 'team_members', 'players', 'player_guardians', 'events', 'guardian_invitations']) {
@@ -92,7 +92,8 @@ describe('rollback (scripts/ops/rollback_phase4a.sql)', () => {
 // Backup (backup_tables.sql = Phase 4-B, backup_tables_latest.sql = latest) and the method-A restore
 // =====================================================================================
 const PHASE4B_END = '20261117000000' // first migration after Phase 4-B
-const FN_ONLY = '20261124000000'      // function-only migration (family invitations): latest 17 -> 18
+const FN_ONLY = '20261124000000'      // first function-only migration (family invitations): latest 17 -> 18
+const FN_ONLY2 = '20261126000000'     // second function-only migration (top-page usage numbers): latest 18 -> 19
 const V = (f: string) => f.slice(0, 14)
 const TEMPLATE = ops('restore_app_data.template.sql')
 const U = (n: number) => `61000000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -217,14 +218,15 @@ describe('backup files', () => {
     expect(lists[1]).toEqual(migrationFiles().map((f) => f.slice(0, 14)))
     expect(lists[0]).toEqual(migrationFiles().filter((f) => f < PHASE4B_END).map((f) => f.slice(0, 14)))
     // function-only tail: exactly the family-invitation migration (it changes no table, column or data)
-    expect(migrationLists(TEMPLATE).functionOnly).toEqual([FN_ONLY])
+    expect(migrationLists(TEMPLATE).functionOnly).toEqual([FN_ONLY, FN_ONLY2])
   })
 
-  it('known states by ID and order (never by count): 4-B = 6; latest = 17 (production) or 18; anything else is refused', () => {
+  it('known states by ID and order (never by count): 4-B = 6; latest = 17, 18 or 19; anything else is refused', () => {
     const lists = migrationLists(TEMPLATE)
     const all = migrationFiles().map(V)
     const l17 = all.filter((v) => v < FN_ONLY)
-    expect(acceptedStates(lists, 'latest')).toEqual([all, l17])
+    const l18 = all.filter((v) => v < FN_ONLY2)
+    expect(acceptedStates(lists, 'latest')).toEqual([all, l18, l17])
     expect(isAcceptedState(lists, 'latest', all)).toBe(true)
     expect(isAcceptedState(lists, 'latest', l17)).toBe(true)
     expect(isAcceptedState(lists, 'phase4b', all.filter((v) => v < PHASE4B_END))).toBe(true)
@@ -232,7 +234,8 @@ describe('backup files', () => {
     for (const bad of [[...all, '20991231000000'], [...l17, '20991231000000'], all.filter((v) => v !== '20261118210000'), swapped, all.slice(0, 16), [], undefined]) {
       expect(isAcceptedState(lists, 'latest', bad as any), JSON.stringify(bad?.length)).toBe(false)
     }
-    expect(functionOnlyExtension(lists, l17, all)).toEqual([FN_ONLY])
+    expect(functionOnlyExtension(lists, l17, all)).toEqual([FN_ONLY, FN_ONLY2])
+    expect(functionOnlyExtension(lists, l18, all)).toEqual([FN_ONLY2])
     expect(functionOnlyExtension(lists, all, all)).toEqual([])
     expect(functionOnlyExtension(lists, all, l17)).toBeNull()                                   // never backwards
     expect(functionOnlyExtension(lists, l17.slice(0, 16), all)).toBeNull()                      // a schema migration in between
@@ -400,7 +403,7 @@ describe('method A restore — latest schema', () => {
     await seedLatest(db)
     const b = await backupOf(db)
     await db.query(`delete from supabase_migrations.schema_migrations where version = '20261118210000'`)
-    expect(await plan(db, b)).toMatch(/neither Phase 4-B .*known latest state \(17 or 18 migrations, by ID and order\): 17 applied/)   // a gap, not a state
+    expect(await plan(db, b)).toMatch(/neither Phase 4-B .*known latest state \(17 to 19 migrations, by ID and order\): 18 applied/)   // a gap, not a state
     const old = await opsDb(PHASE4B_END)
     await old.query(`insert into supabase_migrations.schema_migrations (version) select unnest(array['20261117000000','20261117100000','20261117200000','20261117230000','20261117233000','20261117234500','20261117235500','20261118000000','20261118100000','20261118200000','20261118210000'])`)
     expect(await plan(old, b)).toMatch(/structure does not match its migration history/)
@@ -444,7 +447,7 @@ describe('method A restore — Phase 4-B schema and 4-B backup into the latest s
     const tokBefore = (await q1<{ token: string }>(db, `select token from private.team_join_tokens where team_id = $1`, [s.team.id])).token
     await loseEverything(db)
     const p = await plan(db, b)
-    expect(p).toMatch(/target: latest \(18 migrations\) \| backup: phase4b \(6 migrations\)/)
+    expect(p).toMatch(/target: latest \(19 migrations\) \| backup: phase4b \(6 migrations\)/)
     expect(p).toMatch(/new join tokens .*: 1/)
     await commit(db, b, 1)
     const after = await fingerprint(db)
@@ -458,7 +461,7 @@ describe('method A restore — Phase 4-B schema and 4-B backup into the latest s
   })
 })
 
-describe('method A restore — latest 17 (production) and 18 (after the function-only migration)', () => {
+describe('method A restore — latest 17 and 19 (two function-only migrations in between)', () => {
   const lost17 = async () => {
     const db = await opsDb(FN_ONLY)                                                            // 17 migrations
     const s = await seedLatest(db)
@@ -477,39 +480,39 @@ describe('method A restore — latest 17 (production) and 18 (after the function
     expect(await fingerprint(db)).toEqual(before)
   })
 
-  it('18 -> 18: identical (covered for every latest test above, the default database has 18)', async () => {
+  it('19 -> 19: identical (covered for every latest test above, the default database has 19)', async () => {
     const db = await opsDb()
     await seedLatest(db)
     const b = await backupOf(db)
     const before = await fingerprint(db)
     await loseEverything(db)
     const p = await plan(db, b)
-    expect(p).toMatch(/target: latest \(18 migrations\) \| backup: latest \(18 migrations\)/)
+    expect(p).toMatch(/target: latest \(19 migrations\) \| backup: latest \(19 migrations\)/)
     await commit(db, b, wholeTeams(p))
     expect(await fingerprint(db)).toEqual(before)
   })
 
-  it('17 backup -> 18 database (only a function-only migration in between): every row of every table comes back exactly', async () => {
+  it('17 backup -> 19 database (only function-only migrations in between): every row of every table comes back exactly', async () => {
     const { db, b } = await lost17()
     for (const f of migrationFiles().filter((f) => f >= FN_ONLY)) await applyMigration(db, f)
     await recordMigrations(db)
     const before = await fingerprint(db)                                                       // 18, with the data
     await loseEverything(db)
     const p = await plan(db, b)
-    expect(p).toMatch(/target: latest \(18 migrations\) \| backup: latest \(17 migrations\)/)
+    expect(p).toMatch(/target: latest \(19 migrations\) \| backup: latest \(17 migrations\)/)
     expect(p).toMatch(/post-checks: ok/)
     await commit(db, b, wholeTeams(p))
     expect(await fingerprint(db)).toEqual(before)
   })
 
-  it('18 backup -> 17 database is refused (a backup from a later schema); nothing changes', async () => {
+  it('19 backup -> 17 database is refused (a backup from a later schema); nothing changes', async () => {
     const db18 = await opsDb()
     await seedLatest(db18)
     const b18 = await backupOf(db18)
     const { db } = await lost17()
     await loseEverything(db)
     const lost = await fingerprint(db)
-    expect(await plan(db, b18)).toMatch(/restore_aborted: the backup was taken on a later schema \(18 migrations\) than this database \(17\)/)
+    expect(await plan(db, b18)).toMatch(/restore_aborted: the backup was taken on a later schema \(19 migrations\) than this database \(17\)/)
     expect(await errOf(commit(db, b18, 2))).toMatch(/later schema/)
     expect(await fingerprint(db)).toEqual(lost)
   })
@@ -531,11 +534,14 @@ describe('method A restore — latest 17 (production) and 18 (after the function
     expect(await fingerprint(db)).toEqual(lost)
   })
 
-  it('structure must match the history: 18 recorded without the new function, or 17 recorded with it, is refused', async () => {
+  it('structure must match the history: a recorded function-only migration without its function, or the reverse, is refused', async () => {
     const db = await opsDb()
     await seedLatest(db)
     const b = await backupOf(db)
-    await db.exec(`drop function public.preview_guardian_invitation(text)`)
+    await db.exec(`drop function public.service_stats()`)                                     // 19 recorded, its function gone
+    expect(await plan(db, b)).toMatch(/structure does not match its migration history \(latest\)/)
+    await applyMigration(db, '20261126000000_service_stats.sql')
+    await db.exec(`drop function public.preview_guardian_invitation(text)`)                   // 18th migration's function gone
     expect(await plan(db, b)).toMatch(/structure does not match its migration history \(latest\)/)
     const { db: d17, b: b17 } = await lost17()
     await applyMigration(d17, '20261124000000_family_invite_accept.sql')                     // applied but not recorded

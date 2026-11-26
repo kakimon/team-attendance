@@ -100,7 +100,7 @@ export function migrationLists(template) {
 /**
  * Every accepted migration list of a kind, by ID and order (never by count):
  * phase4b = the 4-B list; latest = the full latest list, or it without a tail of function-only migrations
- * (today: 17 = production before 20261124000000, 18 = after it). Throws when the template is inconsistent.
+ * (today: 17, 18 with 20261124000000, 19 with 20261126000000 too). Throws when the template is inconsistent.
  */
 export function acceptedStates(lists, kind) {
   if (kind === 'phase4b') return [lists.phase4b]

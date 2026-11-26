@@ -84,7 +84,7 @@ describe('every read path is covered (catches a future table or RPC that forgets
     for (const f of fns) expect(f.prosrc, f.proname).toContain('private.require_auth()')
     const anonFns = (await db.query<any>(`select p.proname from pg_proc p where p.pronamespace = 'public'::regnamespace
       and has_function_privilege('anon', p.oid, 'execute')`)).rows.map((r) => r.proname)
-    expect(anonFns).toEqual(['health_check'])
+    expect(anonFns.sort()).toEqual(['health_check', 'service_stats'])   // service_stats: three public counts only (tests/db/serviceStats.test.ts)
   })
 
   it('the session check runs once per query (InitPlan), not per row', async () => {

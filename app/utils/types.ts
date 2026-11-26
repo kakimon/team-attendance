@@ -114,6 +114,12 @@ export type InvitationPreview =
   | { status: 'already_guardian'; player_name: string; team_name: string; team_id: string }
   | { status: 'valid'; player_name: string; team_name: string; is_member: boolean; needs_display_name: boolean; expires_at: string }
 
+/**
+ * Public usage numbers for the top page (public.service_stats, anon only, counts only).
+ * answers = answers currently recorded (one per person and event); not a running total of every answer sent.
+ */
+export interface ServiceStats { users: number; teams: number; answers: number; counted_at: string }
+
 /** A family invitation of one registration, as its guardians see it (never the token). */
 export interface ChildInvitation {
   id: string
@@ -205,6 +211,8 @@ export interface Repo {
   acceptInvitation(token: string, displayName: string): Promise<AcceptResult>
   /** Read only. null = this database has no preview yet (older schema): the page shows the old form. */
   previewInvitation(token: string): Promise<InvitationPreview | null>
+  /** Logged-out top page: three public counts. null = this database has no service_stats yet. */
+  serviceStats(): Promise<ServiceStats | null>
   /** Guardians of the registration only (RLS). Newest first. */
   listChildInvitations(playerId: string): Promise<ChildInvitation[]>
   /** Guardians only. Used / revoked invitations are left as they are (no error). */

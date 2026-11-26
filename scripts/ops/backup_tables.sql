@@ -1,7 +1,7 @@
 -- Read-only logical backup of the app data as one JSON document — for the PHASE 4-B schema
 -- (the 6 migrations up to 20261113100000; the production database before Phase 6). No Docker needed.
 --   supabase db query --linked --agent no --output-format json -f scripts/ops/backup_tables.sql > <backup-dir>/tables.json
--- For a database in a latest state (17 or 18 migrations) use scripts/ops/backup_tables_latest.sql instead (this file does not read
+-- For a database in a latest state (17, 18 or 19 migrations) use scripts/ops/backup_tables_latest.sql instead (this file does not read
 -- the Phase 5 tables). Restore: scripts/ops/build-restore-sql.mjs (method A, docs/internal/PHASE6_BACKUP_RESTORE_DESIGN.md).
 -- One SELECT = one snapshot: every table and every count below are read at the same moment.
 -- The output contains display names, children's names and invitation token hashes: keep it OUTSIDE any repository (mode 600).

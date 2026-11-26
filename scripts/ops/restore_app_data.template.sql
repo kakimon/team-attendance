@@ -30,8 +30,8 @@
 --
 -- Migration states (by migration ID AND order, never by count; c_* below are the single source for the scripts):
 --   phase4b = c_4b.  latest = c_latest, or c_latest without a TAIL of c_fn_only migrations (those change functions
---   only: no table, column or data), i.e. today 17 (production before 20261124000000) or 18 (after it).
---   Anything else (an unknown ID, a gap, another order) is refused. A latest backup restores into the same state,
+--   only: no table, column or data), i.e. today 17 (before 20261124000000), 18 (with it) or 19 (with 20261126000000 too).
+--   (today 19 = after 20261126000000 as well). Anything else (an unknown ID, a gap, another order) is refused. A latest backup restores into the same state,
 --   or into a later state whose extra migrations are all in c_fn_only (the tables are identical); never into an
 --   earlier one.
 --   * Messages contain counts only: never names, e-mails, ids or tokens.
@@ -47,10 +47,10 @@ declare
   c_latest text[] := array['20261107000000','20261108000000','20261109000000','20261110000000','20261113000000','20261113100000',
                            '20261117000000','20261117100000','20261117200000','20261117230000','20261117233000','20261117234500',
                            '20261117235500','20261118000000','20261118100000','20261118200000','20261118210000',
-                           '20261124000000'];
+                           '20261124000000','20261126000000'];
   -- the tail of c_latest that changes functions only (no table / column / data): an earlier latest state is
   -- c_latest without some of these, from the end
-  c_fn_only text[] := array['20261124000000'];
+  c_fn_only text[] := array['20261124000000','20261126000000'];
   c_meta   text[] := array['format','kind','taken_at','migrations','auth_users_count','counts'];
   v_db text[]; v_target text; v_kind text; v_tables text[];
   v_bm text[]; v_cut int;
@@ -85,7 +85,7 @@ begin
     if v_target is null and v_db = c_latest[1 : cardinality(c_latest) - v_cut] then v_target := 'latest'; end if;
   end loop;
   if v_target is null then
-    raise exception 'restore_aborted: the database is neither Phase 4-B (6 migrations) nor a known latest state (% or % migrations, by ID and order): % applied',
+    raise exception 'restore_aborted: the database is neither Phase 4-B (6 migrations) nor a known latest state (% to % migrations, by ID and order): % applied',
       cardinality(c_latest) - cardinality(c_fn_only), cardinality(c_latest), cardinality(v_db);
   end if;
   if to_regclass('public.team_owner_transfers') is null or to_regclass('private.account_deletions') is null
@@ -93,8 +93,9 @@ begin
      or (to_regclass('private.team_member_blocks') is not null) <> (v_target = 'latest')
      or exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'players' and column_name = 'is_self') <> (v_target = 'latest')
      or exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'team_members' and column_name = 'suspended_at') <> (v_target = 'latest')
-     -- 20261124000000 adds preview_guardian_invitation: present exactly when that migration is recorded
-     or (to_regprocedure('public.preview_guardian_invitation(text)') is not null) <> ('20261124000000' = any (v_db)) then
+     -- each function-only migration adds a function: present exactly when that migration is recorded
+     or (to_regprocedure('public.preview_guardian_invitation(text)') is not null) <> ('20261124000000' = any (v_db))
+     or (to_regprocedure('public.service_stats()') is not null) <> ('20261126000000' = any (v_db)) then
     raise exception 'restore_aborted: the database structure does not match its migration history (%)', v_target;
   end if;
 

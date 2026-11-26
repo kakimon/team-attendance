@@ -1,4 +1,4 @@
-// public.health_check(): the only function anon may call; reads no table rows, writes nothing.
+// public.health_check(): anon may call it (and service_stats, the top page's three counts); reads no table rows, writes nothing.
 import { beforeAll, describe, expect, it } from 'vitest'
 import { addUser, asUser, createDb, type Db } from './setup'
 
@@ -30,11 +30,11 @@ describe('health_check', () => {
     expect(rows[0]!.cfg.join()).toContain('search_path=')
   })
 
-  it('anon can execute ONLY health_check; tables stay closed', async () => {
+  it('anon can execute only health_check and service_stats; tables stay closed', async () => {
     const { rows } = await db.query<{ f: string }>(
       `select n.nspname || '.' || p.proname as f from pg_proc p join pg_namespace n on n.oid = p.pronamespace
        where n.nspname in ('public', 'private') and has_function_privilege('anon', p.oid, 'execute') order by 1`)
-    expect(rows.map((r) => r.f)).toEqual(['public.health_check'])
+    expect(rows.map((r) => r.f)).toEqual(['public.health_check', 'public.service_stats'])
     await expect(asUser(db, null, () => db.query('select * from public.teams'))).rejects.toThrow(/permission denied/)
   })
 

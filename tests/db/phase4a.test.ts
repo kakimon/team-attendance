@@ -248,7 +248,7 @@ describe('権限の最小化', () => {
     const anon = await raw<{ f: string }>(
       `select n.nspname || '.' || p.proname as f from pg_proc p join pg_namespace n on n.oid = p.pronamespace
        where n.nspname in ('public','private') and has_function_privilege('anon', p.oid, 'execute')`)
-    expect(anon.map((r) => r.f)).toEqual(['public.health_check'])
+    expect(anon.map((r) => r.f)).toEqual(['public.health_check', 'public.service_stats'])   // service_stats: three public counts only
   })
 
   it('signed-in users still cannot write any table directly', async () => {

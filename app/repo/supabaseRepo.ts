@@ -2,7 +2,7 @@
 // Writes = RPC only (SECURITY DEFINER functions with explicit checks).
 import {
   ERROR_CODES, RepoError,
-  type AcceptResult, type BlockedMember, type ChildInvitation, type InvitationPreview, type DetachResult, type JoinLink, type JoinPreview, type JoinResult,
+  type AcceptResult, type BlockedMember, type ChildInvitation, type InvitationPreview, type ServiceStats, type DetachResult, type JoinLink, type JoinPreview, type JoinResult,
   type LeavePreview, type LeaveCleanupPreview, type SuspendedLeavePreview, type SuspendedLeaveResult, type SuspendedMembership, type MemberImpact, type RegisterSelfResult, type TeamMember, type Attendance, type DeletionPreview, type Member, type OwnerTransfers, type Player, type Repo,
   type Role, type Team, type TeamEvent, type TransferResponse,
 } from '../utils/types'
@@ -263,6 +263,14 @@ export function createSupabaseRepo(db: DbClient, uid: () => string, invoke?: Inv
       // Only a missing function means "older database"; auth / network / other errors are thrown as usual.
       if (r.error && (r.error.code === 'PGRST202' || missingFunction('preview_guardian_invitation', r.error.message))) return null
       return unwrap<InvitationPreview>(r)
+    },
+
+    async serviceStats() {
+      // Callable with the publishable key only (logged-out visitors); an older database has no such function.
+      const r = await db.rpc('service_stats')
+      if (r.error && (r.error.code === 'PGRST202' || missingFunction('service_stats', r.error.message))) return null
+      const s = unwrap<ServiceStats>(r)
+      return { users: Number(s.users), teams: Number(s.teams), answers: Number(s.answers), counted_at: String(s.counted_at) }
     },
 
     async listChildInvitations(playerId) {

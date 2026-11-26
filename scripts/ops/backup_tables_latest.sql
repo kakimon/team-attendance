@@ -1,5 +1,5 @@
 -- Read-only logical backup of the app data as one JSON document — for the LATEST schema
--- (a known latest state: the 17 migrations up to 20261118210000, or 18 with 20261124000000). No Docker needed.
+-- (a known latest state: 17 migrations up to 20261118210000, 18 with 20261124000000, or 19 with 20261126000000). No Docker needed.
 --   supabase db query --linked --agent no --output-format json -f scripts/ops/backup_tables_latest.sql > <backup-dir>/tables.json
 -- On the Phase 4-B schema this file fails (the Phase 5 tables do not exist yet): use scripts/ops/backup_tables.sql there.
 -- private.rate_events (attempt counters) is intentionally left out: it is not needed to restore the app.

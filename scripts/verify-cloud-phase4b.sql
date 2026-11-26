@@ -26,8 +26,8 @@ begin
   out := out || E'\n[schema] browser-callable definer RPCs without the session check: ' || n;
   if n <> 0 then bad := bad + 1; end if;
   select count(*) into n from pg_proc p where p.pronamespace = 'public'::regnamespace
-     and has_function_privilege('anon', p.oid, 'execute') and p.proname <> 'health_check';
-  out := out || E'\n[schema] functions callable without login, other than health_check: ' || n;
+     and has_function_privilege('anon', p.oid, 'execute') and p.proname not in ('health_check', 'service_stats');
+  out := out || E'\n[schema] functions callable without login, other than health_check / service_stats: ' || n;
   if n <> 0 then bad := bad + 1; end if;
   if has_function_privilege('authenticated', 'public.purge_account_data(uuid,uuid,interval)', 'execute')
      or has_function_privilege('authenticated', 'public.note_account_deletion_failure(uuid,text)', 'execute') then

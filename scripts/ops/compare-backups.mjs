@@ -8,7 +8,7 @@
 //     exit 2  "ERROR: ..."    the files cannot be compared (wrong kind, unexpected shape, checksum mismatch, ...)
 //
 // before: a Phase 4-B backup (kind phase4b, 6 migrations). after: the same database after the migrations
-// (kind latest in a known latest state = 17 or 18 migrations by ID and order, or kind phase4b when comparing two
+// (kind latest in a known latest state = 17, 18 or 19 migrations by ID and order, or kind phase4b when comparing two
 // 4-B backups taken at different times).
 // Or: before AND after of kind latest (e.g. 17 -> 18 around a function-only migration such as 20261124000000):
 // after's migrations must be before's plus function-only migrations only (restore_app_data.template.sql c_fn_only);
