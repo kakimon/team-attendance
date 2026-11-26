@@ -67,6 +67,7 @@ describe('top page', () => {
     let last = -1
     for (const s of order) { const i = tpl.indexOf(s, last + 1); expect(i, s).toBeGreaterThan(last); last = i }
     for (const l of ['登録ユーザー', '利用チーム', '出欠の回答']) expect(landing).toContain(l)
+    expect(landing).not.toMatch(/いま記録されている回答の数|時間ごとに更新/)            // no note under the numbers
   })
 
   it('keeps the existing login, invitation and in-app-browser handling', () => {
